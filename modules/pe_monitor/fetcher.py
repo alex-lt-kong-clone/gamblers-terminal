@@ -53,22 +53,17 @@ class YfinanceFetcher:
         forward_eps = self._first(info, "forwardEps", "epsForward")
         ttm_pe = info.get("trailingPE")
         fwd_pe = info.get("forwardPE")
-        analyst_count = info.get("numberOfAnalystOpinions")
-        trade_ccy = info.get("currency")
-        financial_currency = info.get("financialCurrency")
-
-        # Native-currency forward EPS only matters when the company reports in
-        # a different currency than it trades in (HK-listed CN cos, ADRs).
-        forward_eps_native = None
-        if financial_currency and trade_ccy and financial_currency != trade_ccy:
-            try:
-                df = yt.earnings_estimate
-                if df is not None and not df.empty and "+1y" in df.index:
-                    v = df.loc["+1y", "avg"]
-                    if v is not None and v == v:
-                        forward_eps_native = float(v)
-            except Exception:
-                pass
+        trade_ccy, financial_currency = info.get("currency"), info.get("financialCurrency")
+        analyst_count: int | None = None
+        forward_eps_native: float | None = None
+        try:
+            row = yt.earnings_estimate.loc["+1y"]
+            if pd.notna(row.get("numberOfAnalysts")):
+                analyst_count = int(row["numberOfAnalysts"])
+            if financial_currency and trade_ccy and financial_currency != trade_ccy and pd.notna(row.get("avg")):
+                forward_eps_native = float(row["avg"])
+        except Exception:
+            pass
 
         # TTM P/E isn't interpolated, so a trailing loss must read as a gap:
         # compute only for positive EPS and drop any negative value Yahoo gives.
