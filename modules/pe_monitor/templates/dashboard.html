@@ -233,12 +233,12 @@ canvas{width:100%!important;height:100%!important}
 const tickers = {{ tickers | tojson }};
 const FIRST_LIVE_DATE = {{ first_live_collection_date | tojson }};
 const CURRENCY_SYMBOLS = {USD:"$",HKD:"HK$",EUR:"€",GBP:"£",CNY:"¥",JPY:"¥",TWD:"NT$",KRW:"₩"};
-const fmt = v => (v == null ? "N/A" : Number(v).toFixed(2));
+const fmt = v => (v == null ? "N/A" : Number(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}));
 const fmtInt = v => (v == null ? "N/A" : String(Math.round(Number(v))));
 const fmtPrice = (price, currency) => {
   if (price == null) return "N/A";
   const sym = CURRENCY_SYMBOLS[currency] || (currency ? currency + " " : "$");
-  return `${sym}${Number(price).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  return `${sym}${fmt(price)}`;
 };
 const fmtVolume = v => {
   if (v == null) return "N/A";
@@ -533,7 +533,7 @@ const COLUMN_DEFS = [
       const fc = p.data.financial_currency, tc = p.data.currency;
       if (main !== "N/A" && native != null && fc && fc !== tc) {
         const sym = CURRENCY_SYMBOLS[fc] || (fc + " ");
-        return linkCell(`${main} <span class="ccy-native">(${sym}${Number(native).toFixed(2)})</span>`,
+        return linkCell(`${main} <span class="ccy-native">(${sym}${fmt(native)})</span>`,
                         Y.analysis(p.data.ticker));
       }
       return linkCell(main, Y.analysis(p.data.ticker));

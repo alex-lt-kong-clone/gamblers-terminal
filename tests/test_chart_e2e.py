@@ -154,6 +154,7 @@ def test_chart_aligns_and_shades_losses(live_server):
         }
         page.keyboard.press("Escape")
         pop["closed"] = not page.locator("#prov-popover").is_visible()
+        pop["fmt_k"] = page.evaluate("fmt(535980.25)")
     finally:
         browser.close()
         pw.stop()
@@ -185,5 +186,6 @@ def test_chart_aligns_and_shades_losses(live_server):
             "https://finance.yahoo.com/quote/AAA/key-statistics/",
         ],
         "closed": True,
+        "fmt_k": "535,980.25",
     }, pop
     assert not page_errors, f"chart raised JS errors: {page_errors}"
