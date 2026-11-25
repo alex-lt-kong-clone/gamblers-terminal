@@ -47,8 +47,7 @@ def _seed(db):
             "ttm_pe": None if loss else price / 3.0,
             "forward_eps": 8.0, "forward_pe": price / 8.0, "analyst_count": 5,
             "financial_currency": "USD", "forward_eps_native": None,
-            "forward_pe_ibes": price / 8.0, "last_crawl_at": None,
-            "provenance": '{"forward_eps": "info[\'forwardEps\']"}'})
+            "forward_pe_ibes": price / 8.0, "last_crawl_at": None})
         storage.append_snapshot(db, "BBB", {
             "date": d, "name": "Beta Co", "currency": "USD", "price": price,
             "volume": 2_000_000 + i * 1000,
@@ -146,15 +145,15 @@ def test_chart_aligns_and_shades_losses(live_server):
                   after: {wrap: getComputedStyle(wrap).display, axis: dateAxis(),
                           off: volChip().classList.contains('off')}};
         }""")
-        page.locator("a.prov-link[data-ticker='AAA'][data-field='forward_eps']").click()
-        prov = {
+        page.locator("a.pe-pop-link[data-ticker='AAA'][data-field='forward_pe']").click()
+        pop = {
             "visible": page.locator("#prov-popover").is_visible(),
             "title": page.locator("#prov-popover .prov-title").inner_text(),
-            "code": page.locator("#prov-popover .prov-code").inner_text(),
-            "href": page.locator("#prov-popover .prov-ext").get_attribute("href"),
+            "formula": page.locator("#prov-popover .prov-formula").inner_text(),
+            "hrefs": page.locator("#prov-popover .prov-formula a").evaluate_all("els => els.map(e => e.href)"),
         }
         page.keyboard.press("Escape")
-        prov["closed"] = not page.locator("#prov-popover").is_visible()
+        pop["closed"] = not page.locator("#prov-popover").is_visible()
     finally:
         browser.close()
         pw.stop()
@@ -176,11 +175,15 @@ def test_chart_aligns_and_shades_losses(live_server):
     assert toggle["after"]["axis"]["vol"] is False, toggle
     # toggle chips are keyboard-accessible buttons (aria-pressed reflects shown state)
     assert toggle["a11y"] == {"role": "button", "pressed": "true", "tabindex": "0"}, toggle["a11y"]
-    assert prov == {
+    assert pop == {
         "visible": True,
-        "title": "AAA · Fwd EPS",
-        "code": "info['forwardEps']",
-        "href": "https://finance.yahoo.com/quote/AAA/analysis/",
+        "title": "AAA · Fwd P/E",
+        "formula": "144.50 / 8.00 = 18.06",
+        "hrefs": [
+            "https://finance.yahoo.com/quote/AAA/",
+            "https://finance.yahoo.com/quote/AAA/analysis/",
+            "https://finance.yahoo.com/quote/AAA/key-statistics/",
+        ],
         "closed": True,
-    }, prov
+    }, pop
     assert not page_errors, f"chart raised JS errors: {page_errors}"

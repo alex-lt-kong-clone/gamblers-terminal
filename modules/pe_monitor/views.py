@@ -8,13 +8,12 @@ from contextlib import contextmanager
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from . import config, fetcher, scheduler, storage
+from . import config, scheduler, storage
 
 SLUG = "pe-monitor"
 _HERE = Path(__file__).resolve().parent
@@ -383,11 +382,13 @@ def api_history(
     return _downsample(rows, _pick_bucket(len(rows)), open_end)
 
 
-def _hide_nonpositive_pe(row: dict[str, Any]) -> dict[str, Any]:
-    tr = fetcher.Trace(row.get("provenance"))
+def _hide_nonpositive_pe(row: dict) -> dict:
+    """A P/E is a meaningful multiple only when positive; a non-positive value (a
+    trailing or forecast loss) reads as undefined. The chart enforces this via
+    interpolation; the latest-snapshot grid enforces it here."""
     for c in ("ttm_pe", "forward_pe", "forward_pe_ibes"):
-        if row.get(c) is not None and row[c] <= 0: row[c] = tr.rec(c, None, chain=True)
-    row["provenance"] = tr.ops
+        if row.get(c) is not None and row[c] <= 0:
+            row[c] = None
     return row
 
 
