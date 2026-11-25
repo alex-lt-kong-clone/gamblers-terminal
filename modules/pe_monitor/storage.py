@@ -2,6 +2,7 @@
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 
 SCHEMA = """
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS history (
     forward_eps_native REAL,
     forward_pe_ibes    REAL,
     last_crawl_at      TEXT,
+    provenance         TEXT,
     PRIMARY KEY (ticker, date)
 );
 """
@@ -29,7 +31,7 @@ ROW_COLS = (
     "date", "name", "currency", "price", "volume",
     "trailing_eps", "forward_eps", "ttm_pe", "forward_pe",
     "analyst_count", "financial_currency", "forward_eps_native",
-    "forward_pe_ibes", "last_crawl_at",
+    "forward_pe_ibes", "last_crawl_at", "provenance",
 )
 
 _MIGRATIONS = (
@@ -39,6 +41,7 @@ _MIGRATIONS = (
     ("volume",             "ALTER TABLE history ADD COLUMN volume INTEGER"),
     ("forward_pe_ibes",    "ALTER TABLE history ADD COLUMN forward_pe_ibes REAL"),
     ("last_crawl_at",      "ALTER TABLE history ADD COLUMN last_crawl_at TEXT"),
+    ("provenance",         "ALTER TABLE history ADD COLUMN provenance TEXT"),
 )
 
 
@@ -54,26 +57,30 @@ def init_db(db_path: str) -> None:
                 conn.execute(ddl)
 
 
+def _select_cols(conn: sqlite3.Connection) -> str:
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(history)")}
+    return ", ".join(c if c in existing else f"NULL AS {c}" for c in ROW_COLS)
+
+
 def read_history(
     db_path: str,
     ticker: str,
     start_date: str | None = None,
     end_date: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Read history rows for a ticker, optionally bounded by [start_date,
     end_date] (inclusive). Both bounds are ISO-format date strings."""
-    sql = f"SELECT {', '.join(ROW_COLS)} FROM history WHERE ticker = ?"
-    params: list = [ticker.upper()]
+    params: list[Any] = [ticker.upper()]
+    where = "WHERE ticker = ?"
     if start_date:
-        sql += " AND date >= ?"
+        where += " AND date >= ?"
         params.append(start_date)
     if end_date:
-        sql += " AND date <= ?"
+        where += " AND date <= ?"
         params.append(end_date)
-    sql += " ORDER BY date"
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(sql, params).fetchall()
+        rows = conn.execute(f"SELECT {_select_cols(conn)} FROM history {where} ORDER BY date", params).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -90,7 +97,7 @@ def latest_value_date(
     if column not in ROW_COLS:
         raise ValueError(f"unknown column: {column}")
     sql = f"SELECT MAX(date) FROM history WHERE ticker = ? AND {column} IS NOT NULL"
-    params: list = [ticker.upper()]
+    params: list[Any] = [ticker.upper()]
     if require_price:
         sql += " AND price > 0"
     if on_or_before:
@@ -98,7 +105,7 @@ def latest_value_date(
         params.append(on_or_before)
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(sql, params).fetchone()
-    return row[0] if row and row[0] else None
+    return str(row[0]) if row and row[0] else None
 
 
 def earliest_value_date(
@@ -115,7 +122,7 @@ def earliest_value_date(
     if column not in ROW_COLS:
         raise ValueError(f"unknown column: {column}")
     sql = f"SELECT MIN(date) FROM history WHERE ticker = ? AND {column} IS NOT NULL"
-    params: list = [ticker.upper()]
+    params: list[Any] = [ticker.upper()]
     if require_price:
         sql += " AND price > 0"
     if on_or_after:
@@ -123,16 +130,16 @@ def earliest_value_date(
         params.append(on_or_after)
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(sql, params).fetchone()
-    return row[0] if row and row[0] else None
+    return str(row[0]) if row and row[0] else None
 
 
-def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict]:
+def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict[str, Any]]:
     """Return the most-recent row per requested ticker, with empty stubs for
     tickers that have no rows yet. Order matches the input `tickers` list."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(f"""
-            SELECT ticker, {', '.join(ROW_COLS)} FROM history
+            SELECT ticker, {_select_cols(conn)} FROM history
             WHERE (ticker, date) IN (
                 SELECT ticker, MAX(date) FROM history GROUP BY ticker
             )
@@ -149,12 +156,12 @@ def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict]:
                 "trailing_eps": None, "forward_eps": None,
                 "ttm_pe": None, "forward_pe": None, "analyst_count": None,
                 "financial_currency": None, "forward_eps_native": None,
-                "forward_pe_ibes": None, "last_crawl_at": None,
+                "forward_pe_ibes": None, "last_crawl_at": None, "provenance": None,
             })
     return result
 
 
-def append_snapshot(db_path: str, ticker: str, snapshot: dict) -> None:
+def append_snapshot(db_path: str, ticker: str, snapshot: dict[str, Any]) -> None:
     """UPSERT for same-day entries: latest non-NULL write wins.
 
     The snapshot replaces any existing column where the new value is
@@ -179,7 +186,7 @@ def append_snapshot(db_path: str, ticker: str, snapshot: dict) -> None:
 
 
 def merge_history(
-    db_path: str, ticker: str, new_rows: list[dict]
+    db_path: str, ticker: str, new_rows: list[dict[str, Any]]
 ) -> tuple[int, int]:
     """Insert missing dates and fill NULL columns in existing rows.
 

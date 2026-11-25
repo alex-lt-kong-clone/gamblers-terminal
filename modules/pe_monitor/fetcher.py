@@ -11,16 +11,44 @@ Two backends:
 `get_fetcher(ticker)` dispatches by suffix.
 """
 
+import inspect
+import json
+import linecache
 from datetime import date, datetime, timedelta
-from typing import Protocol
+from pathlib import Path
+from typing import Any, Protocol, TypeVar
 
 import pandas as pd
 import yfinance as yf
 
+_T = TypeVar("_T")
+
+
+class Trace:
+    def __init__(self, initial: dict[str, str] | str | None = None) -> None:
+        self.ops: dict[str, str] = json.loads(initial) if isinstance(initial, str) else dict(initial or {})
+
+    def pick(self, field: str, info: dict[str, Any], *keys: str) -> Any:
+        for k in keys:
+            v = info.get(k)
+            if v is not None:
+                self.ops[field] = f"info[{k!r}]"
+                return v
+        return None
+
+    def rec(self, field: str, val: _T, *, chain: bool = False) -> _T:
+        frame = inspect.currentframe()
+        caller = frame.f_back if frame else None
+        if caller is not None:
+            line = linecache.getline(caller.f_code.co_filename, caller.f_lineno).strip()
+            src = f"{Path(caller.f_code.co_filename).name}:{caller.f_lineno}  {line}"
+            self.ops[field] = f"{self.ops[field]} -> {src}" if chain and field in self.ops else src
+        return val
+
 
 class DataFetcher(Protocol):
-    def fetch_pe(self, ticker: str) -> dict: ...
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]: ...
+    def fetch_pe(self, ticker: str) -> dict[str, Any]: ...
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]: ...
 
 
 class YfinanceFetcher:
@@ -29,53 +57,36 @@ class YfinanceFetcher:
 
     REPORTING_LAG_DAYS = 45  # Fallback when get_earnings_dates is unavailable
 
-    @staticmethod
-    def _first(info: dict, *keys: str):
-        """Return the first non-None value. Yahoo mirrors the same number
-        under multiple keys (trailingEps / epsTrailingTwelveMonths)."""
-        for k in keys:
-            v = info.get(k)
-            if v is not None:
-                return v
-        return None
-
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         yt = yf.Ticker(ticker)
         info = yt.info
+        tr = Trace()
 
-        price = self._first(info, "currentPrice", "regularMarketPrice")
-        # yfinance returns 0 for regularMarketVolume on KR tickers (known
-        # quirk; the average* fields are populated). Treat 0 as missing so
-        # we don't overwrite a real historical value with zero.
-        raw_volume = self._first(info, "regularMarketVolume", "volume")
+        price = tr.pick("price", info, "currentPrice", "regularMarketPrice")
+        raw_volume = tr.pick("volume", info, "regularMarketVolume", "volume")
         volume = int(raw_volume) if raw_volume else None
-        trailing_eps = self._first(info, "trailingEps", "epsTrailingTwelveMonths")
-        forward_eps = self._first(info, "forwardEps", "epsForward")
-        ttm_pe = info.get("trailingPE")
-        fwd_pe = info.get("forwardPE")
+        trailing_eps = tr.pick("trailing_eps", info, "trailingEps", "epsTrailingTwelveMonths")
+        forward_eps = tr.pick("forward_eps", info, "forwardEps", "epsForward")
+        ttm_pe = tr.pick("ttm_pe", info, "trailingPE")
+        fwd_pe = tr.pick("forward_pe", info, "forwardPE")
         trade_ccy, financial_currency = info.get("currency"), info.get("financialCurrency")
         analyst_count: int | None = None
         forward_eps_native: float | None = None
         try:
-            row = yt.earnings_estimate.loc["+1y"]
-            if pd.notna(row.get("numberOfAnalysts")):
-                analyst_count = int(row["numberOfAnalysts"])
-            if financial_currency and trade_ccy and financial_currency != trade_ccy and pd.notna(row.get("avg")):
-                forward_eps_native = float(row["avg"])
+            ee = yt.earnings_estimate
+            if ee is not None and "+1y" in ee.index:
+                if "numberOfAnalysts" in ee.columns and pd.notna(ee.loc["+1y", "numberOfAnalysts"]):
+                    analyst_count = tr.rec("analyst_count", int(ee.loc["+1y", "numberOfAnalysts"]))
+                if financial_currency and trade_ccy and financial_currency != trade_ccy and "avg" in ee.columns and pd.notna(ee.loc["+1y", "avg"]):
+                    forward_eps_native = tr.rec("forward_eps_native", float(ee.loc["+1y", "avg"]))
         except Exception:
             pass
 
-        # TTM P/E isn't interpolated, so a trailing loss must read as a gap:
-        # compute only for positive EPS and drop any negative value Yahoo gives.
         if ttm_pe is None and price and trailing_eps and trailing_eps > 0:
-            ttm_pe = price / trailing_eps
-        if ttm_pe is not None and ttm_pe <= 0:
-            ttm_pe = None
-        # Forward P/E keeps its sign: a negative value (forecast loss) is real
-        # data the chart interpolation uses to break the line; display layers
-        # show non-positive forward P/E as undefined.
+            ttm_pe = tr.rec("ttm_pe", price / trailing_eps)
+        if ttm_pe is not None and ttm_pe <= 0: ttm_pe = tr.rec("ttm_pe", None, chain=True)
         if fwd_pe is None and price and forward_eps:
-            fwd_pe = price / forward_eps
+            fwd_pe = tr.rec("forward_pe", price / forward_eps)
 
         return {
             "date": date.today().isoformat(),
@@ -91,9 +102,10 @@ class YfinanceFetcher:
             "financial_currency": financial_currency,
             "forward_eps_native": forward_eps_native,
             "last_crawl_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "provenance": json.dumps(tr.ops),
         }
 
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]:
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]:
         yt = yf.Ticker(ticker)
         info = yt.info
         name = info.get("longName", "")
@@ -121,12 +133,10 @@ class YfinanceFetcher:
             raw_vol = prow.get("Volume")
             volume = int(raw_vol) if raw_vol is not None and pd.notna(raw_vol) else None
             applicable = [eps for rd, eps in eps_history if rd <= d]
-            if len(applicable) >= 4:
-                ttm_eps = sum(applicable[-4:])
-                ttm_pe = price / ttm_eps if ttm_eps > 0 else None
+            ttm_eps: float | None = sum(applicable[-4:]) if len(applicable) >= 4 else None
+            ttm_pe = price / ttm_eps if ttm_eps and ttm_eps > 0 else None
+            if ttm_eps is not None:
                 ttm_count += 1
-            else:
-                ttm_eps = ttm_pe = None
             rows.append({
                 "date": d.isoformat(),
                 "name": name,
@@ -147,7 +157,7 @@ class YfinanceFetcher:
         suffix = "" if ttm_count == len(rows) else f" ({len(rows) - ttm_count} price-only, <4Q EPS)"
         return rows, "ok" + suffix
 
-    def _eps_history(self, ticker_obj, true_ttm_eps):
+    def _eps_history(self, ticker_obj: Any, true_ttm_eps: float | None) -> list[tuple[date, float]]:
         """Return [(available_date, scaled_eps), ...] oldest-first. Calibrates
         raw values by `true_ttm_eps / sum(latest 4 reported)` so units match
         the trading currency. When `true_ttm_eps` is falsy (e.g. KR names
@@ -218,8 +228,9 @@ class KrxFetcher:
     def __init__(self, base: DataFetcher):
         self._base = base
 
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         snap = self._base.fetch_pe(ticker)
+        tr = Trace(snap.get("provenance"))
 
         if snap.get("trailing_eps") is None:
             try:
@@ -227,21 +238,22 @@ class KrxFetcher:
                 if ed is not None and not ed.empty:
                     ed = ed.dropna(subset=["Reported EPS"]).sort_index()
                     if len(ed) >= 4:
-                        ttm_eps = float(ed["Reported EPS"].iloc[-4:].sum())
+                        ttm_eps = tr.rec("trailing_eps", float(ed["Reported EPS"].iloc[-4:].sum()))
                         snap["trailing_eps"] = ttm_eps
                         if snap.get("price") and ttm_eps > 0:
-                            snap["ttm_pe"] = snap["price"] / ttm_eps
+                            snap["ttm_pe"] = tr.rec("ttm_pe", snap["price"] / ttm_eps)
             except Exception:
                 pass
 
         if snap.get("forward_eps") is None and snap.get("forward_pe") and snap.get("price"):
             fp = snap["forward_pe"]
             if fp > 0:
-                snap["forward_eps"] = snap["price"] / fp
+                snap["forward_eps"] = tr.rec("forward_eps", snap["price"] / fp)
 
+        snap["provenance"] = json.dumps(tr.ops)
         return snap
 
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]:
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]:
         return self._base.backfill_history(ticker, days)
 
 
