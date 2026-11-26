@@ -12,14 +12,14 @@ Two backends:
 """
 
 from datetime import date, datetime, timedelta
-from typing import Protocol
+from typing import Any, Protocol
 
 import pandas as pd
 import yfinance as yf
 
 
 class DataFetcher(Protocol):
-    def fetch_pe(self, ticker: str) -> dict: ...
+    def fetch_pe(self, ticker: str) -> dict[str, Any]: ...
     def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]: ...
 
 
@@ -39,7 +39,7 @@ class YfinanceFetcher:
                 return v
         return None
 
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         yt = yf.Ticker(ticker)
         info = yt.info
 
@@ -71,9 +71,8 @@ class YfinanceFetcher:
             ttm_pe = price / trailing_eps
         if ttm_pe is not None and ttm_pe <= 0:
             ttm_pe = None
-        # Forward P/E keeps its sign: a negative value (forecast loss) is real
-        # data the chart interpolation uses to break the line; display layers
-        # show non-positive forward P/E as undefined.
+        # Keep the sign: a forecast loss breaks the chart line;
+        # display layers show non-positive forward P/E as N/A.
         if fwd_pe is None and price and forward_eps:
             fwd_pe = price / forward_eps
 
@@ -218,7 +217,7 @@ class KrxFetcher:
     def __init__(self, base: DataFetcher):
         self._base = base
 
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         snap = self._base.fetch_pe(ticker)
 
         if snap.get("trailing_eps") is None:

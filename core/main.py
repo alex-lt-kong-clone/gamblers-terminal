@@ -79,7 +79,7 @@ def build_app(config: host_config.HostConfig, modules: list) -> FastAPI:
     # Gate first, then SessionMiddleware last so it sits outermost and
     # request.session is populated before the gate reads it.
     app.middleware("http")(make_auth_gate(config.auth_tokens))
-    app.add_middleware(SessionMiddleware, secret_key=config.secret_key, session_cookie=f"gt_session_{config.port}", max_age=SESSION_MAX_AGE)
+    app.add_middleware(SessionMiddleware, secret_key=config.secret_key, session_cookie=config.session_cookie or f"gt_session_{config.port}", max_age=SESSION_MAX_AGE)
 
     templates = Jinja2Templates(directory=str(_HERE / "templates"))
     app.mount("/static", StaticFiles(directory=str(_HERE / "static")), name="static")

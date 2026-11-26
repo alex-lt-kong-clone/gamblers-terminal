@@ -61,10 +61,10 @@ def test_auth_revocation(make_app):
 
 def test_session_cookie_isolated_by_port(make_app):
     c1 = TestClient(make_app(port=9090, auth_tokens=["tok1"], secret_key="secret-one-0123456789"))
-    c2 = TestClient(make_app(port=9091, auth_tokens=["tok2"], secret_key="secret-two-0123456789"))
+    c2 = TestClient(make_app(port=9090, session_cookie="gt_custom", auth_tokens=["tok2"], secret_key="secret-two-0123456789"))
     c1.get("/?token=tok1")
     c2.get("/?token=tok2")
-    assert "gt_session_9090" in c1.cookies and "gt_session_9091" in c2.cookies
+    assert "gt_session_9090" in c1.cookies and "gt_custom" in c2.cookies
     c1.cookies.update(c2.cookies)
     assert c1.get("/pe-monitor/api/tickers").status_code == 200
 
