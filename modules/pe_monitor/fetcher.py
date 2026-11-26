@@ -71,9 +71,8 @@ class YfinanceFetcher:
             ttm_pe = price / trailing_eps
         if ttm_pe is not None and ttm_pe <= 0:
             ttm_pe = None
-        # Forward P/E keeps its sign: a negative value (forecast loss) is real
-        # data the chart interpolation uses to break the line; display layers
-        # show non-positive forward P/E as undefined.
+        # Keep the sign: a forecast loss breaks the chart line;
+        # display layers show non-positive forward P/E as N/A.
         if fwd_pe is None and price and forward_eps:
             fwd_pe = price / forward_eps
 
