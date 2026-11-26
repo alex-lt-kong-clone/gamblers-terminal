@@ -150,10 +150,14 @@ def test_chart_aligns_and_shades_losses(live_server):
             "visible": page.locator("#prov-popover").is_visible(),
             "title": page.locator("#prov-popover .prov-title").inner_text(),
             "formula": page.locator("#prov-popover .prov-formula").inner_text(),
+            "meta": page.locator("#prov-popover .prov-meta").inner_text(),
             "hrefs": page.locator("#prov-popover .prov-formula a").evaluate_all("els => els.map(e => e.href)"),
         }
         page.keyboard.press("Escape")
         pop["closed"] = not page.locator("#prov-popover").is_visible()
+        page.locator("a.pe-pop-link[data-ticker='AAA'][data-field='ttm_pe']").click()
+        pop["ttm_meta_visible"] = page.locator("#prov-popover .prov-meta").is_visible()
+        page.keyboard.press("Escape")
         pop["fmt_k"] = page.evaluate("fmt(535980.25)")
         pop["cols"] = page.evaluate("COLUMN_DEFS.map(c => c.field)")
         page.evaluate("""() => gridApi.setGridOption('rowData', [
@@ -190,14 +194,16 @@ def test_chart_aligns_and_shades_losses(live_server):
         "visible": True,
         "title": "AAA · Fwd P/E",
         "formula": "144.50 / 8.00 = 18.06",
+        "meta": "AnalystCount: 5",
         "hrefs": [
             "https://finance.yahoo.com/quote/AAA/",
             "https://finance.yahoo.com/quote/AAA/analysis/",
             "https://finance.yahoo.com/quote/AAA/key-statistics/",
         ],
         "closed": True,
+        "ttm_meta_visible": False,
         "fmt_k": "535,980.25",
-        "cols": ["ticker", "name", "price", "ttm_pe", "analyst_count", "forward_pe", "last_crawl_at"],
+        "cols": ["ticker", "name", "price", "ttm_pe", "forward_pe", "last_crawl_at"],
         "loss_formula": "38.92 / -1.78 = N/A",
         "hk_formula": "337.40 / 33.62 (¥28.75) = 10.04",
     }, pop

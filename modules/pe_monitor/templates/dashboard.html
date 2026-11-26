@@ -160,8 +160,9 @@ canvas{width:100%!important;height:100%!important}
 .prov-title{color:var(--accent);font-weight:700;font-size:.76rem}
 .prov-close{background:none;border:0;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0}
 .prov-formula{font-variant-numeric:tabular-nums;white-space:nowrap}
-.prov-formula a{color:var(--accent);text-decoration:none}
-.prov-formula a:hover{text-decoration:underline}
+.prov-meta{margin-top:.3rem;color:var(--muted);font-size:.76rem}
+.prov-pop a{color:var(--accent);text-decoration:none}
+.prov-pop a:hover{text-decoration:underline}
 .prov-warn{color:#ffd23f;font-weight:600}
 </style>
 </head>
@@ -227,6 +228,7 @@ canvas{width:100%!important;height:100%!important}
 <div id="prov-popover" class="prov-pop" role="dialog" hidden>
   <div class="prov-head"><span class="prov-title"></span><button type="button" class="prov-close" aria-label="Close">×</button></div>
   <div class="prov-formula"></div>
+  <div class="prov-meta"></div>
 </div>
 
 <script>
@@ -524,8 +526,6 @@ const COLUMN_DEFS = [
     cellRenderer: p => linkCell(fmtPrice(p.data.price, p.data.currency), Y.quote(p.data.ticker))},
   {field: "ttm_pe", headerName: "TTM P/E", type: "numericColumn", flex: 1,
     cellRenderer: p => peCell(p.value, "ttm_pe", "trailing_eps", p.data, Y.stats(p.data.ticker))},
-  {field: "analyst_count", headerName: "Anlst", type: "numericColumn", flex: 0.7,
-    cellRenderer: p => linkCell(fmtInt(p.value), Y.analysis(p.data.ticker))},
   {field: "forward_pe", headerName: "Fwd P/E", type: "numericColumn", flex: 1,
     cellRenderer: p => peCell(p.value, "forward_pe", "forward_eps", p.data, Y.stats(p.data.ticker)), sort: "asc"},
   {field: "last_crawl_at", headerName: "Last successful crawl", flex: 1.4,
@@ -985,6 +985,9 @@ function initPeFormulaPopover() {
     pop.querySelector(".prov-formula").innerHTML =
       `${ext(fmt(row.price), Y.quote(row.ticker), "Price")} / ` +
       `${ext(fmt(eps) + nativeTag, isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker), isFwd ? "Fwd EPS" : "TTM EPS")} ${rhs}`;
+    const meta = pop.querySelector(".prov-meta");
+    meta.hidden = !isFwd;
+    if (isFwd) meta.innerHTML = `AnalystCount: ${row.analyst_count != null ? ext(fmtInt(row.analyst_count), Y.analysis(row.ticker), "AnalystCount") : "N/A"}`;
     pop.hidden = false;
     const r = a.getBoundingClientRect();
     pop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12))}px`;
