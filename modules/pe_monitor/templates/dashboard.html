@@ -966,7 +966,6 @@ function initPeFormulaPopover() {
     const a = e.target.closest("a.pe-pop-link");
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();
-    e.stopPropagation();
     const row = gridApi?.getRowNode(a.dataset.ticker)?.data;
     if (!row) return;
     const isFwd = a.dataset.field === "forward_pe";
@@ -993,7 +992,7 @@ function initPeFormulaPopover() {
     pop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12))}px`;
     pop.style.top = `${Math.max(12, Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 12))}px`;
   });
-  document.addEventListener("click", e => { if (!pop.hidden && !pop.contains(e.target)) close(); });
+  document.addEventListener("click", e => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("a.pe-pop-link")) close(); });
   document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
 }
 
