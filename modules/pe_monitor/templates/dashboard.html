@@ -71,7 +71,7 @@ section.summary h2,section.charts h2{
 #summary-grid .cell-link:hover{text-decoration:underline}
 .ccy-native{color:var(--muted);font-size:.85em;margin-left:.25em}
 #summary-grid .crawl-fresh{color:#2ecc71;font-weight:600}
-#summary-grid .crawl-warn{color:#ffd23f;font-weight:600}
+#summary-grid .crawl-warn,.crawl-warn{color:#ffd23f;font-weight:600}
 #summary-grid .crawl-stale{color:#ff5252;font-weight:600}
 
 .chart-card{
@@ -161,9 +161,9 @@ canvas{width:100%!important;height:100%!important}
 .prov-close{background:none;border:0;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0}
 .prov-formula{font-variant-numeric:tabular-nums;white-space:nowrap}
 .prov-meta{margin-top:.3rem;color:var(--muted);font-size:.76rem}
+.prov-meta:empty{display:none}
 .prov-pop a{color:var(--accent);text-decoration:none}
 .prov-pop a:hover{text-decoration:underline}
-.prov-warn{color:#ffd23f;font-weight:600}
 </style>
 </head>
 <body>
@@ -962,7 +962,6 @@ function initPeFormulaPopover() {
   const pop = document.getElementById("prov-popover");
   let openedAt = 0;
   const close = () => { pop.hidden = true; };
-  const ext = (txt, url, title) => `<a href="${url}" target="_blank" rel="noopener" title="${title}">${txt}</a>`;
   pop.querySelector(".prov-close").addEventListener("click", close);
   document.getElementById("summary-grid").addEventListener("click", e => {
     const a = e.target.closest("a.pe-pop-link");
@@ -974,21 +973,15 @@ function initPeFormulaPopover() {
     const eps = isFwd ? row.forward_eps : row.trailing_eps;
     const pe = row[a.dataset.field];
     const calc = eps ? row.price / eps : null;
-    const peLink = pe != null ? ext(fmt(pe), Y.stats(row.ticker), isFwd ? "Fwd P/E" : "TTM P/E") : "";
+    const peLink = linkCell(fmt(pe), Y.stats(row.ticker));
     const mismatch = pe != null && (calc == null || Math.abs(calc - pe) / pe > 0.02);
-    const rhs = pe != null
-      ? (mismatch ? `= ${fmt(calc)} <span class="prov-warn">(shown ${peLink} ⚠)</span>` : `= ${peLink}`)
-      : "= N/A";
-    const fc = row.financial_currency, tc = row.currency;
-    const nativeTag = isFwd && row.forward_eps_native != null && fc && fc !== tc
-      ? ` <span class="ccy-native">(${CURRENCY_SYMBOLS[fc] || (escapeHtml(fc) + " ")}${fmt(row.forward_eps_native)})</span>` : "";
-    pop.querySelector(".prov-title").textContent = `${row.ticker} · ${isFwd ? "Fwd P/E" : "TTM P/E"}`;
-    pop.querySelector(".prov-formula").innerHTML =
-      `${ext(fmt(row.price), Y.quote(row.ticker), "Price")} / ` +
-      `${ext(fmt(eps) + nativeTag, isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker), isFwd ? "Fwd EPS" : "TTM EPS")} ${rhs}`;
-    const meta = pop.querySelector(".prov-meta");
-    meta.hidden = !isFwd;
-    if (isFwd) meta.innerHTML = `AnalystCount: ${row.analyst_count != null ? ext(fmtInt(row.analyst_count), Y.analysis(row.ticker), "AnalystCount") : "N/A"}`;
+    const rhs = mismatch ? `= ${fmt(calc)} <span class="crawl-warn">(shown ${peLink} ⚠)</span>` : `= ${peLink}`;
+    const native = isFwd && row.forward_eps_native != null
+      ? ` <span class="ccy-native">(${fmtPrice(row.forward_eps_native, row.financial_currency)})</span>` : "";
+    pop.querySelector(".prov-title").textContent = `${row.ticker} · ${isFwd ? "Fwd" : "TTM"} P/E`;
+    pop.querySelector(".prov-formula").innerHTML = `${linkCell(fmt(row.price), Y.quote(row.ticker))} / ` +
+      `${linkCell(fmt(eps) + native, isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker))} ${rhs}`;
+    pop.querySelector(".prov-meta").innerHTML = isFwd ? `AnalystCount: ${linkCell(fmtInt(row.analyst_count), Y.analysis(row.ticker))}` : "";
     openedAt = Date.now();
     pop.hidden = false;
     const r = a.getBoundingClientRect();
