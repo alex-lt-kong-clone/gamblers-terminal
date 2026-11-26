@@ -239,7 +239,7 @@ const fmt = v => (v == null ? "N/A" : Number(v).toLocaleString("en-US", {minimum
 const fmtInt = v => (v == null ? "N/A" : String(Math.round(Number(v))));
 const fmtPrice = (price, currency) => {
   if (price == null) return "N/A";
-  const sym = CURRENCY_SYMBOLS[currency] || (currency ? currency + " " : "$");
+  const sym = CURRENCY_SYMBOLS[currency] || (currency ? escapeHtml(currency) + " " : "$");
   return `${sym}${fmt(price)}`;
 };
 const fmtVolume = v => {
@@ -517,7 +517,7 @@ function peCell(val, field, epsField, row, url) {
 
 const COLUMN_DEFS = [
   {field: "ticker", headerName: "Ticker", width: 140, pinned: "left", cellClass: "ticker-cell",
-    cellRenderer: p => `<a href="${Y.quote(p.value)}" target="_blank" rel="noopener" class="cell-link">${p.value}</a>`},
+    cellRenderer: p => `<a href="${Y.quote(p.value)}" target="_blank" rel="noopener" class="cell-link">${escapeHtml(p.value)}</a>`},
   {field: "name", headerName: "Company", flex: 2,
     cellRenderer: p => p.value
       ? `<a href="${Y.quote(p.data.ticker)}" target="_blank" rel="noopener" class="cell-link">${escapeHtml(p.value)}</a>`
@@ -979,7 +979,7 @@ function initPeFormulaPopover() {
       : "= N/A";
     const fc = row.financial_currency, tc = row.currency;
     const nativeTag = isFwd && row.forward_eps_native != null && fc && fc !== tc
-      ? ` <span class="ccy-native">(${CURRENCY_SYMBOLS[fc] || (fc + " ")}${fmt(row.forward_eps_native)})</span>` : "";
+      ? ` <span class="ccy-native">(${CURRENCY_SYMBOLS[fc] || (escapeHtml(fc) + " ")}${fmt(row.forward_eps_native)})</span>` : "";
     pop.querySelector(".prov-title").textContent = `${row.ticker} · ${isFwd ? "Fwd P/E" : "TTM P/E"}`;
     pop.querySelector(".prov-formula").innerHTML =
       `${ext(fmt(row.price), Y.quote(row.ticker), "Price")} / ` +
