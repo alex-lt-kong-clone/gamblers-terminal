@@ -974,7 +974,7 @@ function initPeFormulaPopover() {
     const pe = row[a.dataset.field];
     const calc = eps ? row.price / eps : null;
     const peLink = pe != null ? ext(fmt(pe), Y.stats(row.ticker), isFwd ? "Fwd P/E" : "TTM P/E") : "";
-    const mismatch = pe != null && calc != null && Math.abs(calc - pe) / Math.max(Math.abs(pe), 1e-9) > 0.02;
+    const mismatch = pe != null && (calc == null || Math.abs(calc - pe) / pe > 0.02);
     const rhs = pe != null
       ? (mismatch ? `= ${fmt(calc)} <span class="prov-warn">(shown ${peLink} ⚠)</span>` : `= ${peLink}`)
       : "= N/A";
