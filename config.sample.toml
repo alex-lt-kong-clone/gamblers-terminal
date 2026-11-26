@@ -17,3 +17,6 @@ auth_tokens = []
 # multi-replica deploys, set false on web replicas and run schedulers on exactly
 # one instance (which owns the data).
 enable_schedulers = true
+
+# Session cookie name. Set a unique name when instances share one host.
+# session_cookie = "gt_session_a"
