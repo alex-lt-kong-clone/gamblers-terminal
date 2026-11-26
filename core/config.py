@@ -27,6 +27,7 @@ class HostConfig(BaseModel):
     secret_key: str = _DEFAULT_SECRET
     auth_tokens: list[str] = []
     enable_schedulers: bool = True
+    session_cookie: str = ""
 
 
 def config_source(path: str | None = None) -> str:

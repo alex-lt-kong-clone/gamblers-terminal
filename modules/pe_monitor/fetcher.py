@@ -12,14 +12,14 @@ Two backends:
 """
 
 from datetime import date, datetime, timedelta
-from typing import Protocol
+from typing import Any, Protocol
 
 import pandas as pd
 import yfinance as yf
 
 
 class DataFetcher(Protocol):
-    def fetch_pe(self, ticker: str) -> dict: ...
+    def fetch_pe(self, ticker: str) -> dict[str, Any]: ...
     def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]: ...
 
 
@@ -39,7 +39,7 @@ class YfinanceFetcher:
                 return v
         return None
 
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         yt = yf.Ticker(ticker)
         info = yt.info
 
@@ -53,22 +53,17 @@ class YfinanceFetcher:
         forward_eps = self._first(info, "forwardEps", "epsForward")
         ttm_pe = info.get("trailingPE")
         fwd_pe = info.get("forwardPE")
-        analyst_count = info.get("numberOfAnalystOpinions")
-        trade_ccy = info.get("currency")
-        financial_currency = info.get("financialCurrency")
-
-        # Native-currency forward EPS only matters when the company reports in
-        # a different currency than it trades in (HK-listed CN cos, ADRs).
-        forward_eps_native = None
-        if financial_currency and trade_ccy and financial_currency != trade_ccy:
-            try:
-                df = yt.earnings_estimate
-                if df is not None and not df.empty and "+1y" in df.index:
-                    v = df.loc["+1y", "avg"]
-                    if v is not None and v == v:
-                        forward_eps_native = float(v)
-            except Exception:
-                pass
+        trade_ccy, financial_currency = info.get("currency"), info.get("financialCurrency")
+        analyst_count: int | None = None
+        forward_eps_native: float | None = None
+        try:
+            row = yt.earnings_estimate.loc["+1y"]
+            if pd.notna(row.get("numberOfAnalysts")):
+                analyst_count = int(row["numberOfAnalysts"])
+            if financial_currency and trade_ccy and financial_currency != trade_ccy and pd.notna(row.get("avg")):
+                forward_eps_native = float(row["avg"])
+        except Exception:
+            pass
 
         # TTM P/E isn't interpolated, so a trailing loss must read as a gap:
         # compute only for positive EPS and drop any negative value Yahoo gives.
@@ -76,9 +71,8 @@ class YfinanceFetcher:
             ttm_pe = price / trailing_eps
         if ttm_pe is not None and ttm_pe <= 0:
             ttm_pe = None
-        # Forward P/E keeps its sign: a negative value (forecast loss) is real
-        # data the chart interpolation uses to break the line; display layers
-        # show non-positive forward P/E as undefined.
+        # Keep the sign: a forecast loss breaks the chart line;
+        # display layers show non-positive forward P/E as N/A.
         if fwd_pe is None and price and forward_eps:
             fwd_pe = price / forward_eps
 
@@ -223,7 +217,7 @@ class KrxFetcher:
     def __init__(self, base: DataFetcher):
         self._base = base
 
-    def fetch_pe(self, ticker: str) -> dict:
+    def fetch_pe(self, ticker: str) -> dict[str, Any]:
         snap = self._base.fetch_pe(ticker)
 
         if snap.get("trailing_eps") is None:

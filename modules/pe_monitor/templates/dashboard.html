@@ -69,9 +69,9 @@ section.summary h2,section.charts h2{
 #summary-grid .ticker-cell{font-weight:600;color:var(--accent);font-family:ui-monospace,Menlo,monospace}
 #summary-grid .cell-link{color:inherit;text-decoration:none}
 #summary-grid .cell-link:hover{text-decoration:underline}
-#summary-grid .ccy-native{color:var(--muted);font-size:.85em;margin-left:.25em}
+.ccy-native{color:var(--muted);font-size:.85em;margin-left:.25em}
 #summary-grid .crawl-fresh{color:#2ecc71;font-weight:600}
-#summary-grid .crawl-warn{color:#ffd23f;font-weight:600}
+#summary-grid .crawl-warn,.crawl-warn{color:#ffd23f;font-weight:600}
 #summary-grid .crawl-stale{color:#ff5252;font-weight:600}
 
 .chart-card{
@@ -151,6 +151,19 @@ canvas{width:100%!important;height:100%!important}
 .col-menu label:hover{background:var(--bg)}
 .col-menu input{cursor:pointer;margin:0}
 .col-menu label.locked{opacity:.55;cursor:not-allowed}
+.prov-pop{
+  position:fixed;z-index:40;max-width:min(420px,calc(100vw - 24px));
+  background:var(--surface);border:1px solid var(--accent);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:.6rem .8rem;font-size:.82rem;
+}
+.prov-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.35rem}
+.prov-title{color:var(--accent);font-weight:700;font-size:.76rem}
+.prov-close{background:none;border:0;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0}
+.prov-formula{font-variant-numeric:tabular-nums;white-space:nowrap}
+.prov-meta{margin-top:.3rem;color:var(--muted);font-size:.76rem}
+.prov-meta:empty{display:none}
+.prov-pop a{color:var(--accent);text-decoration:none}
+.prov-pop a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -212,17 +225,22 @@ canvas{width:100%!important;height:100%!important}
   {% endfor %}
 </section>
 </main>
+<div id="prov-popover" class="prov-pop" role="dialog" hidden>
+  <div class="prov-head"><span class="prov-title"></span><button type="button" class="prov-close" aria-label="Close">×</button></div>
+  <div class="prov-formula"></div>
+  <div class="prov-meta"></div>
+</div>
 
 <script>
 const tickers = {{ tickers | tojson }};
 const FIRST_LIVE_DATE = {{ first_live_collection_date | tojson }};
 const CURRENCY_SYMBOLS = {USD:"$",HKD:"HK$",EUR:"€",GBP:"£",CNY:"¥",JPY:"¥",TWD:"NT$",KRW:"₩"};
-const fmt = v => (v == null ? "N/A" : Number(v).toFixed(2));
+const fmt = v => (v == null ? "N/A" : Number(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}));
 const fmtInt = v => (v == null ? "N/A" : String(Math.round(Number(v))));
 const fmtPrice = (price, currency) => {
   if (price == null) return "N/A";
-  const sym = CURRENCY_SYMBOLS[currency] || (currency ? currency + " " : "$");
-  return `${sym}${Number(price).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+  const sym = CURRENCY_SYMBOLS[currency] || (currency ? escapeHtml(currency) + " " : "$");
+  return `${sym}${fmt(price)}`;
 };
 const fmtVolume = v => {
   if (v == null) return "N/A";
@@ -491,35 +509,25 @@ function linkCell(text, url) {
   return `<a href="${url}" target="_blank" rel="noopener" class="cell-link">${text}</a>`;
 }
 
+function peCell(val, field, epsField, row, url) {
+  const text = fmt(val);
+  if (row.price == null || row[epsField] == null) return linkCell(text, url);
+  return `<a href="${url}" target="_blank" rel="noopener" class="cell-link pe-pop-link" data-ticker="${escapeHtml(row.ticker)}" data-field="${field}">${text}</a>`;
+}
+
 const COLUMN_DEFS = [
   {field: "ticker", headerName: "Ticker", width: 140, pinned: "left", cellClass: "ticker-cell",
-    cellRenderer: p => `<a href="${Y.quote(p.value)}" target="_blank" rel="noopener" class="cell-link">${p.value}</a>`},
+    cellRenderer: p => `<a href="${Y.quote(p.value)}" target="_blank" rel="noopener" class="cell-link">${escapeHtml(p.value)}</a>`},
   {field: "name", headerName: "Company", flex: 2,
     cellRenderer: p => p.value
       ? `<a href="${Y.quote(p.data.ticker)}" target="_blank" rel="noopener" class="cell-link">${escapeHtml(p.value)}</a>`
       : "—"},
   {field: "price", headerName: "Price", type: "numericColumn", flex: 1.2,
     cellRenderer: p => linkCell(fmtPrice(p.data.price, p.data.currency), Y.quote(p.data.ticker))},
-  {field: "trailing_eps", headerName: "TTM EPS", type: "numericColumn", flex: 1,
-    cellRenderer: p => linkCell(fmt(p.value), Y.stats(p.data.ticker))},
   {field: "ttm_pe", headerName: "TTM P/E", type: "numericColumn", flex: 1,
-    cellRenderer: p => linkCell(fmt(p.value), Y.stats(p.data.ticker))},
-  {field: "forward_eps", headerName: "Fwd EPS", type: "numericColumn", flex: 1.4,
-    cellRenderer: p => {
-      const main = fmt(p.value);
-      const native = p.data.forward_eps_native;
-      const fc = p.data.financial_currency, tc = p.data.currency;
-      if (main !== "N/A" && native != null && fc && fc !== tc) {
-        const sym = CURRENCY_SYMBOLS[fc] || (fc + " ");
-        return linkCell(`${main} <span class="ccy-native">(${sym}${Number(native).toFixed(2)})</span>`,
-                        Y.analysis(p.data.ticker));
-      }
-      return linkCell(main, Y.analysis(p.data.ticker));
-    }},
-  {field: "analyst_count", headerName: "Anlst", type: "numericColumn", flex: 0.7,
-    cellRenderer: p => linkCell(fmtInt(p.value), Y.analysis(p.data.ticker))},
+    cellRenderer: p => peCell(p.value, "ttm_pe", "trailing_eps", p.data, Y.stats(p.data.ticker))},
   {field: "forward_pe", headerName: "Fwd P/E", type: "numericColumn", flex: 1,
-    cellRenderer: p => linkCell(fmt(p.value), Y.analysis(p.data.ticker)), sort: "asc"},
+    cellRenderer: p => peCell(p.value, "forward_pe", "forward_eps", p.data, Y.stats(p.data.ticker)), sort: "asc"},
   {field: "last_crawl_at", headerName: "Last successful crawl", flex: 1.4,
     cellRenderer: p => fmtRelativeTime(p.value),
     cellClassRules: {
@@ -619,6 +627,7 @@ async function loadSnapshot() {
   const data = await res.json();
   ensureGrid();
   gridApi.setGridOption("rowData", data);
+  document.getElementById("prov-popover").hidden = true;
   const dates = data.map(r => r.date).filter(Boolean).sort();
   const latest = dates[dates.length - 1] || "no data yet";
   document.getElementById("meta").textContent = `· ${tickers.length} tickers · last updated ${latest}`;
@@ -949,6 +958,42 @@ function initPanelSplitter() {
   gutter.addEventListener("dblclick", () => { setSplit(0.5, true); reflowCharts(); });
 }
 
+function initPeFormulaPopover() {
+  const pop = document.getElementById("prov-popover");
+  let openedAt = 0;
+  const close = () => { pop.hidden = true; };
+  pop.querySelector(".prov-close").addEventListener("click", close);
+  document.getElementById("summary-grid").addEventListener("click", e => {
+    const a = e.target.closest("a.pe-pop-link");
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    const row = gridApi?.getRowNode(a.dataset.ticker)?.data;
+    if (!row) return;
+    const isFwd = a.dataset.field === "forward_pe";
+    const eps = isFwd ? row.forward_eps : row.trailing_eps;
+    const pe = row[a.dataset.field];
+    const calc = eps ? row.price / eps : null;
+    const peLink = linkCell(fmt(pe), Y.stats(row.ticker));
+    const mismatch = pe != null && (calc == null || Math.abs(calc - pe) / pe > 0.02);
+    const rhs = mismatch ? `= ${fmt(calc)} <span class="crawl-warn">(shown ${peLink} ⚠)</span>` : `= ${peLink}`;
+    const native = isFwd && row.forward_eps_native != null
+      ? ` <span class="ccy-native">(${fmtPrice(row.forward_eps_native, row.financial_currency)})</span>` : "";
+    pop.querySelector(".prov-title").textContent = `${row.ticker} · ${isFwd ? "Fwd" : "TTM"} P/E`;
+    pop.querySelector(".prov-formula").innerHTML = `${linkCell(fmt(row.price), Y.quote(row.ticker))} / ` +
+      `${linkCell(fmt(eps) + native, isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker))} ${rhs}`;
+    pop.querySelector(".prov-meta").innerHTML = isFwd ? `AnalystCount: ${linkCell(fmtInt(row.analyst_count), Y.analysis(row.ticker))}` : "";
+    openedAt = Date.now();
+    pop.hidden = false;
+    const r = a.getBoundingClientRect();
+    pop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12))}px`;
+    pop.style.top = `${Math.max(12, Math.min(r.bottom + 6, window.innerHeight - pop.offsetHeight - 12))}px`;
+  });
+  document.addEventListener("click", e => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest("a.pe-pop-link")) close(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  window.addEventListener("resize", close);
+  window.addEventListener("scroll", () => { if (Date.now() - openedAt > 150) close(); }, true);
+}
+
 (async () => {
   document.querySelectorAll(".range-btn").forEach(btn => {
     btn.addEventListener("click", () => setRange(btn.dataset.range));
@@ -968,6 +1013,7 @@ function initPanelSplitter() {
   renderPanelToggle();
   applyPanelVisibility();
   initPanelSplitter();
+  initPeFormulaPopover();
   updateHistoryPlaceholder();
   await loadSnapshot();
   // Re-fetch so a background crawl shows up without manual refresh; re-render
