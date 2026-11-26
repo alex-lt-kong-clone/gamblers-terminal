@@ -155,6 +155,16 @@ def test_chart_aligns_and_shades_losses(live_server):
         page.keyboard.press("Escape")
         pop["closed"] = not page.locator("#prov-popover").is_visible()
         pop["fmt_k"] = page.evaluate("fmt(535980.25)")
+        pop["cols"] = page.evaluate("COLUMN_DEFS.map(c => c.field)")
+        page.evaluate("""() => gridApi.setGridOption('rowData', [
+            {ticker:'LOSS', name:'Loss Co', currency:'USD', financial_currency:'USD', price:38.92, forward_eps:-1.78, forward_pe:null},
+            {ticker:'HKCO', name:'HK Co', currency:'HKD', financial_currency:'CNY', price:337.4, forward_eps:33.62, forward_eps_native:28.75, forward_pe:10.04},
+        ])""")
+        page.locator("a.pe-pop-link[data-ticker='LOSS'][data-field='forward_pe']").click()
+        pop["loss_formula"] = page.locator("#prov-popover .prov-formula").inner_text()
+        page.keyboard.press("Escape")
+        page.locator("a.pe-pop-link[data-ticker='HKCO'][data-field='forward_pe']").click()
+        pop["hk_formula"] = page.locator("#prov-popover .prov-formula").inner_text()
     finally:
         browser.close()
         pw.stop()
@@ -187,5 +197,8 @@ def test_chart_aligns_and_shades_losses(live_server):
         ],
         "closed": True,
         "fmt_k": "535,980.25",
+        "cols": ["ticker", "name", "price", "ttm_pe", "analyst_count", "forward_pe", "last_crawl_at"],
+        "loss_formula": "38.92 / -1.78 = N/A",
+        "hk_formula": "337.40 / 33.62 (¥28.75) = 10.04",
     }, pop
     assert not page_errors, f"chart raised JS errors: {page_errors}"

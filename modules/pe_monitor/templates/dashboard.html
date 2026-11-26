@@ -522,22 +522,8 @@ const COLUMN_DEFS = [
       : "—"},
   {field: "price", headerName: "Price", type: "numericColumn", flex: 1.2,
     cellRenderer: p => linkCell(fmtPrice(p.data.price, p.data.currency), Y.quote(p.data.ticker))},
-  {field: "trailing_eps", headerName: "TTM EPS", type: "numericColumn", flex: 1,
-    cellRenderer: p => linkCell(fmt(p.value), Y.stats(p.data.ticker))},
   {field: "ttm_pe", headerName: "TTM P/E", type: "numericColumn", flex: 1,
     cellRenderer: p => peCell(p.value, "ttm_pe", "trailing_eps", p.data, Y.stats(p.data.ticker))},
-  {field: "forward_eps", headerName: "Fwd EPS", type: "numericColumn", flex: 1.4,
-    cellRenderer: p => {
-      const main = fmt(p.value);
-      const native = p.data.forward_eps_native;
-      const fc = p.data.financial_currency, tc = p.data.currency;
-      if (main !== "N/A" && native != null && fc && fc !== tc) {
-        const sym = CURRENCY_SYMBOLS[fc] || (fc + " ");
-        return linkCell(`${main} <span class="ccy-native">(${sym}${fmt(native)})</span>`,
-                        Y.analysis(p.data.ticker));
-      }
-      return linkCell(main, Y.analysis(p.data.ticker));
-    }},
   {field: "analyst_count", headerName: "Anlst", type: "numericColumn", flex: 0.7,
     cellRenderer: p => linkCell(fmtInt(p.value), Y.analysis(p.data.ticker))},
   {field: "forward_pe", headerName: "Fwd P/E", type: "numericColumn", flex: 1,
@@ -991,11 +977,14 @@ function initPeFormulaPopover() {
     const mismatch = pe != null && calc != null && Math.abs(calc - pe) / Math.max(Math.abs(pe), 1e-9) > 0.02;
     const rhs = pe != null
       ? (mismatch ? `= ${fmt(calc)} <span class="prov-warn">(shown ${peLink} ⚠)</span>` : `= ${peLink}`)
-      : (calc != null ? `= ${fmt(calc)} → N/A` : "→ N/A");
+      : "= N/A";
+    const fc = row.financial_currency, tc = row.currency;
+    const nativeTag = isFwd && row.forward_eps_native != null && fc && fc !== tc
+      ? ` <span class="ccy-native">(${CURRENCY_SYMBOLS[fc] || (fc + " ")}${fmt(row.forward_eps_native)})</span>` : "";
     pop.querySelector(".prov-title").textContent = `${row.ticker} · ${isFwd ? "Fwd P/E" : "TTM P/E"}`;
     pop.querySelector(".prov-formula").innerHTML =
       `${ext(fmt(row.price), Y.quote(row.ticker), "Price")} / ` +
-      `${ext(fmt(eps), isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker), isFwd ? "Fwd EPS" : "TTM EPS")} ${rhs}`;
+      `${ext(fmt(eps) + nativeTag, isFwd ? Y.analysis(row.ticker) : Y.stats(row.ticker), isFwd ? "Fwd EPS" : "TTM EPS")} ${rhs}`;
     pop.hidden = false;
     const r = a.getBoundingClientRect();
     pop.style.left = `${Math.max(12, Math.min(r.left, window.innerWidth - pop.offsetWidth - 12))}px`;
