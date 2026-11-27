@@ -13,11 +13,11 @@ One FastAPI app: a landing page mounting each tool as a self-contained **module*
 ## Run
 
 ```bash
-pip install -r requirements.txt
+uv sync --locked --no-dev
 cp config.sample.toml config.toml
 cp modules/pe_monitor/config.sample.toml modules/pe_monitor/config.toml
 cp modules/crypto_tracker/portfolio.sample.csv modules/crypto_tracker/portfolio.csv
-python -m core --config config.toml
+uv run --no-sync python -m core --config config.toml
 ```
 
 `--config` is mandatory (or `GAMBLERS_TOOLBOX_CONFIG`). It holds only shared concerns
@@ -32,5 +32,27 @@ open `?token=<uuid>` once for a cookie. **Add a module**: drop a package under
 ## Tests
 
 ```bash
-pip install -r requirements-dev.txt && python -m pytest
+uv sync --locked && uv run --no-sync pytest
+```
+
+## Dependencies
+
+Regenerate `uv.lock` after editing `pyproject.toml`:
+
+```bash
+uv lock
+```
+
+`pyproject.toml` sets `exclude-newer = "14 days"` as a supply-chain cooldown.
+To exempt an urgent security fix for a single package:
+
+```bash
+uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=false
+```
+
+## Update
+
+```bash
+git pull
+uv sync --locked --no-dev
 ```
