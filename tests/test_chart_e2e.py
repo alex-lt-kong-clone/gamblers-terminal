@@ -4,7 +4,7 @@ seeded DB and drives the real Chart.js dashboard with headless Chromium.
 This is the regression net for the chart JS, which Python unit tests can't reach
 (it's how a no-op `segmentBreak` once shipped). Skipped automatically when
 Playwright or its Chromium aren't installed, so the default suite stays light:
-    pip install playwright && python -m playwright install chromium
+    uv sync --locked && uv run --no-sync playwright install chromium
 """
 import socket
 import threading
