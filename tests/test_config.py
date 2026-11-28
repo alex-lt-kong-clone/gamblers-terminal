@@ -44,7 +44,7 @@ def test_default_secret_ok_when_auth_off(tmp_path):
 
 def test_unknown_key_rejected(tmp_path):
     # A typo'd `auth_token` must fail loudly, not silently disable auth.
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         config.load_config(_write(tmp_path, 'auth_token = ["x"]\n'))
 
 
