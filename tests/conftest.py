@@ -4,6 +4,7 @@ and offers a make_app factory that builds an app with host-config overrides.
 
 import os
 import tempfile
+from collections.abc import Callable
 
 _fd, _CFG = tempfile.mkstemp(suffix=".toml")
 with os.fdopen(_fd, "w") as f:
@@ -16,6 +17,7 @@ with os.fdopen(_fd, "w") as f:
 os.environ["GAMBLERS_TOOLBOX_CONFIG"] = _CFG
 
 import pytest  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 
 from core import config as host_config  # noqa: E402
 from core import main  # noqa: E402
@@ -23,11 +25,11 @@ from core.registry import discover_modules  # noqa: E402
 
 
 @pytest.fixture
-def make_app():
+def make_app() -> Callable[..., FastAPI]:
     base = host_config.load_config()
     modules = discover_modules()
 
-    def _make(**overrides):
+    def _make(**overrides: object) -> FastAPI:
         cfg = base.model_copy(update=overrides)
         return main.build_app(cfg, modules)
 

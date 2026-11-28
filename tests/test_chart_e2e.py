@@ -9,6 +9,7 @@ Playwright or its Chromium aren't installed, so the default suite stays light:
 import socket
 import threading
 import time
+from collections.abc import Iterator
 from datetime import date, timedelta
 
 import pytest
@@ -23,15 +24,15 @@ from core.registry import discover_modules  # noqa: E402
 from modules.pe_monitor import config as pe_config, storage, views  # noqa: E402
 
 
-def _free_port():
+def _free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
+    port: int = s.getsockname()[1]
     s.close()
     return port
 
 
-def _seed(db):
+def _seed(db: str) -> None:
     """AAA: trailing loss days 30-59 (-> a TTM/blue band). BBB: always profitable
     (-> no bands). Forward/IBES stay positive for both, so AAA shows exactly one
     band kind and BBB none."""
@@ -58,7 +59,7 @@ def _seed(db):
 
 
 @pytest.fixture(scope="module")
-def live_server(tmp_path_factory):
+def live_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     db = str(tmp_path_factory.mktemp("e2e") / "pe.db")
     storage.init_db(db)
     _seed(db)
@@ -89,7 +90,7 @@ def live_server(tmp_path_factory):
         views._cfg.cache_clear()
 
 
-def test_chart_aligns_and_shades_losses(live_server):
+def test_chart_aligns_and_shades_losses(live_server: str) -> None:
     try:
         pw = sync_playwright().start()
         browser = pw.chromium.launch()

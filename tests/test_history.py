@@ -1,6 +1,9 @@
 import os
 import tempfile
 from datetime import date, timedelta
+from typing import Any
+
+import pytest
 
 from modules.pe_monitor import storage
 from modules.pe_monitor.views import (
@@ -12,7 +15,7 @@ from modules.pe_monitor.views import (
 )
 
 
-def _mkdb(rows):
+def _mkdb(rows: list[dict[str, Any]]) -> str:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     storage.init_db(path)
@@ -21,7 +24,7 @@ def _mkdb(rows):
     return path
 
 
-def test_history_fills_window_start_gap():
+def test_history_fills_window_start_gap() -> None:
     # Two forward_pe anchors 40 days apart over a daily price series. A window
     # starting inside the gap must still get an interpolated value at its first
     # row — the read reaches back to the prior anchor, then clips to the window.
@@ -46,7 +49,7 @@ def test_history_fills_window_start_gap():
         os.unlink(db)
 
 
-def test_interpolate_breaks_across_forward_loss():
+def test_interpolate_breaks_across_forward_loss() -> None:
     # June: profit; Aug & Sep: forecast loss (negative stored P/E); Oct: profit.
     # The line must break across the loss — never bridge it or plot a negative.
     rows = [
@@ -66,7 +69,7 @@ def test_interpolate_breaks_across_forward_loss():
     assert all(v is None or v > 0 for v in by.values())  # never negative
 
 
-def test_history_fills_custom_window_between_anchors():
+def test_history_fills_custom_window_between_anchors() -> None:
     # A custom [start, end] window strictly between two sparse anchors must still
     # interpolate — the read reaches forward to the right anchor, not just back.
     base = date(2020, 1, 1)
@@ -90,7 +93,7 @@ def test_history_fills_custom_window_between_anchors():
         os.unlink(db)
 
 
-def test_interpolate_nulls_zero_pe():
+def test_interpolate_nulls_zero_pe() -> None:
     # A zero P/E is a degenerate placeholder, not a value -> served as a gap, not y:0.
     rows = [
         {"date": "2026-01-01", "price": 100.0, "forward_pe": 0.0},   # edge zero
@@ -103,10 +106,10 @@ def test_interpolate_nulls_zero_pe():
     assert by["2026-02-01"] == 10.0
 
 
-def test_collapse_bucket_preserves_loss_over_recovered_last_row():
+def test_collapse_bucket_preserves_loss_over_recovered_last_row() -> None:
     # A historical bucket: a loss earlier in it must survive even when the last row
     # recovered — otherwise coarse zoom hides the break/band the daily view shows.
-    bucket = [
+    bucket: list[dict[str, Any]] = [
         {"date": "2024-01-01", "forward_pe": None, "forward_pe_loss": True,
          "forward_pe_ibes": None, "forward_pe_ibes_loss": True,
          "ttm_pe": None, "trailing_eps": -1.0, "volume": 10},
@@ -121,7 +124,7 @@ def test_collapse_bucket_preserves_loss_over_recovered_last_row():
     assert out["volume"] == 30            # volume still sums
 
 
-def test_collapse_bucket_keeps_last_when_no_loss():
+def test_collapse_bucket_keeps_last_when_no_loss() -> None:
     bucket = [
         {"date": "2024-01-01", "forward_pe": 10.0, "forward_pe_loss": False,
          "ttm_pe": 9.0, "trailing_eps": 3.0, "volume": 10},
@@ -132,10 +135,10 @@ def test_collapse_bucket_keeps_last_when_no_loss():
     assert out["forward_pe"] == 12.0 and out["ttm_pe"] == 8.0 and out["volume"] == 30
 
 
-def test_collapse_bucket_open_keeps_recovered_last_value():
+def test_collapse_bucket_open_keeps_recovered_last_value() -> None:
     # The open (latest) bucket drives the chart endpoint + header: a loss earlier in
     # it that recovered by the last row must NOT null today's value to a gap/N/A.
-    bucket = [
+    bucket: list[dict[str, Any]] = [
         {"date": "2024-01-01", "forward_pe": None, "forward_pe_loss": True,
          "forward_pe_ibes": None, "forward_pe_ibes_loss": True,
          "ttm_pe": None, "trailing_eps": -1.0, "volume": 10},
@@ -150,12 +153,12 @@ def test_collapse_bucket_open_keeps_recovered_last_value():
     assert out["volume"] == 30            # volume still sums
 
 
-def test_downsample_open_bucket_keeps_recovered_endpoint():
+def test_downsample_open_bucket_keeps_recovered_endpoint() -> None:
     # End to end through _downsample: a loss inside the final (open) bucket whose
     # last raw row recovered must leave the chart endpoint on the recovered value,
     # while a historical loss bucket still collapses to a gap.
     base = date(2022, 1, 1)
-    rows = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
+    rows: list[dict[str, Any]] = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
              "forward_pe": 10.0, "forward_pe_loss": False,
              "ttm_pe": 9.0, "trailing_eps": 3.0, "volume": 5} for i in range(900)]
     bucket = _pick_bucket(len(rows))
@@ -176,7 +179,7 @@ def test_downsample_open_bucket_keeps_recovered_endpoint():
     assert hist[-1]["ttm_pe"] is None
 
 
-def test_api_history_keeps_loss_at_custom_historical_edge(monkeypatch):
+def test_api_history_keeps_loss_at_custom_historical_edge(monkeypatch: pytest.MonkeyPatch) -> None:
     # The route must only exempt the final bucket when the window reaches the latest
     # row. A custom `end` in the past has a historical right edge: a recovered loss
     # there stays a gap, while the live `range=all` view shows the recovery.
@@ -184,7 +187,7 @@ def test_api_history_keeps_loss_at_custom_historical_edge(monkeypatch):
     base = date(2022, 1, 1)
     base_ord = base.toordinal()
     n, end_idx = 900, 860
-    rows = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
+    rows: list[dict[str, Any]] = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
              "forward_pe": 10.0, "forward_pe_ibes": 10.0} for i in range(n)]
     bucket = _pick_bucket(end_idx + 1)
     assert bucket > 1                                       # the window downsamples
@@ -207,7 +210,7 @@ def test_api_history_keeps_loss_at_custom_historical_edge(monkeypatch):
         os.unlink(db)
 
 
-def test_api_history_exempts_live_bucket_when_latest_price_missing(monkeypatch):
+def test_api_history_exempts_live_bucket_when_latest_price_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     # open_end must track the actual last row, not the last *priced* row: if the
     # latest row's price is missing, the live bucket must still be exempt so an
     # earlier recovered loss in it isn't drawn as an ongoing gap at today's edge.
@@ -215,7 +218,7 @@ def test_api_history_exempts_live_bucket_when_latest_price_missing(monkeypatch):
     base = date(2022, 1, 1)
     base_ord = base.toordinal()
     n = 900
-    rows = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
+    rows: list[dict[str, Any]] = [{"date": (base + timedelta(days=i)).isoformat(), "price": 100.0,
              "forward_pe": 10.0, "forward_pe_ibes": 10.0} for i in range(n)]
     bucket = _pick_bucket(n)
     last_b = (base_ord + n - 1) // bucket
