@@ -22,13 +22,14 @@ import argparse
 import json
 import pathlib
 import sys
+from typing import Any
 
 import _bootstrap  # noqa: F401  (sys.path shim)
 import config
 import storage
 
 
-def load_rows(path: str | None) -> list[dict]:
+def load_rows(path: str | None) -> list[dict[str, Any]]:
     src = open(path) if path else sys.stdin
     try:
         data = json.load(src)
@@ -41,7 +42,7 @@ def load_rows(path: str | None) -> list[dict]:
 
 
 def import_one(
-    ticker: str, rows: list[dict], cutoff: str, db_path: str, dry_run: bool
+    ticker: str, rows: list[dict[str, Any]], cutoff: str, db_path: str, dry_run: bool
 ) -> tuple[int, int, int, int]:
     """Returns (kept, post_cutoff_skipped, malformed, inserted_or_filled_total).
     In dry-run mode the last element is 0."""

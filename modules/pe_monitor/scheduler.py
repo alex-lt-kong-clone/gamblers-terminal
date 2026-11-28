@@ -5,6 +5,7 @@ skipped; a manual refresh that overlaps raises Busy (surfaced as HTTP 409).
 """
 
 import threading
+from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -17,7 +18,7 @@ class Busy(Exception):
     """A snapshot is already in progress."""
 
 
-def _has_usable_data(snap: dict) -> bool:
+def _has_usable_data(snap: dict[str, Any]) -> bool:
     price = snap.get("price")
     return price is not None and price > 0
 

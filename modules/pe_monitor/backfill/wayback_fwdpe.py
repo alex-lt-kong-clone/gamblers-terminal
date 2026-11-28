@@ -70,7 +70,7 @@ def fetch_wayback(timestamp: str, url: str) -> str:
     full = WAYBACK_URL_PREFIX.format(ts=timestamp, url=url)
     req = urllib.request.Request(full, headers={"User-Agent": UA})  # noqa: S310
     with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
-        data = r.read()
+        data: bytes = r.read()
         if r.headers.get("Content-Encoding") == "gzip":
             data = gzip.decompress(data)
     return data.decode("utf-8", errors="replace")

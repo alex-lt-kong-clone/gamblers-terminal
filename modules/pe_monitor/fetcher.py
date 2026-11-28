@@ -20,7 +20,7 @@ import yfinance as yf
 
 class DataFetcher(Protocol):
     def fetch_pe(self, ticker: str) -> dict[str, Any]: ...
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]: ...
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]: ...
 
 
 class YfinanceFetcher:
@@ -30,11 +30,11 @@ class YfinanceFetcher:
     REPORTING_LAG_DAYS = 45  # Fallback when get_earnings_dates is unavailable
 
     @staticmethod
-    def _first(info: dict, *keys: str):
+    def _first(info: dict[str, Any], *keys: str) -> float | None:
         """Return the first non-None value. Yahoo mirrors the same number
         under multiple keys (trailingEps / epsTrailingTwelveMonths)."""
         for k in keys:
-            v = info.get(k)
+            v: float | None = info.get(k)
             if v is not None:
                 return v
         return None
@@ -92,7 +92,7 @@ class YfinanceFetcher:
             "last_crawl_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         }
 
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]:
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]:
         yt = yf.Ticker(ticker)
         info = yt.info
         name = info.get("longName", "")
@@ -114,6 +114,7 @@ class YfinanceFetcher:
         # window even though the prices exist at the source.
         rows = []
         ttm_count = 0
+        ttm_eps: float | None
         for ts, prow in prices.iterrows():
             d = ts.date() if hasattr(ts, "date") else ts
             price = float(prow["Close"])
@@ -146,7 +147,7 @@ class YfinanceFetcher:
         suffix = "" if ttm_count == len(rows) else f" ({len(rows) - ttm_count} price-only, <4Q EPS)"
         return rows, "ok" + suffix
 
-    def _eps_history(self, ticker_obj, true_ttm_eps):
+    def _eps_history(self, ticker_obj: yf.Ticker, true_ttm_eps: float | None) -> list[tuple[date, float]]:
         """Return [(available_date, scaled_eps), ...] oldest-first. Calibrates
         raw values by `true_ttm_eps / sum(latest 4 reported)` so units match
         the trading currency. When `true_ttm_eps` is falsy (e.g. KR names
@@ -240,7 +241,7 @@ class KrxFetcher:
 
         return snap
 
-    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict], str]:
+    def backfill_history(self, ticker: str, days: int) -> tuple[list[dict[str, Any]], str]:
         return self._base.backfill_history(ticker, days)
 
 
