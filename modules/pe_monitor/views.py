@@ -214,7 +214,7 @@ def _decompose(then_price: float | None, now_price: float | None, then_pe: float
     return out
 
 
-def _delta_point(rows: list[dict[str, Any]], days: int | None, ytd: bool) -> dict[str, object]:
+def _delta_point(rows: list[dict[str, Any]], days: int | None, ytd: bool) -> dict[str, Any]:
     """Forward-P/E change from `now` (latest value) to `then` (value on/before
     now - window). The live forward_pe series is sparse (live snapshots + a few
     backfilled anchors), so we interpolate it to daily exactly as the chart does
