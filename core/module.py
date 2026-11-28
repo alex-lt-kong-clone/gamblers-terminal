@@ -23,7 +23,7 @@ class Module:
     static_dir: Optional[str] = None   # abs path mounted at /<slug>/static
     static_name: Optional[str] = None  # url_for name (match the template)
     # Resource setup (e.g. create/migrate the DB). Entered on every instance.
-    lifespan: Optional[Callable[[], AbstractContextManager]] = None
+    lifespan: Optional[Callable[[], AbstractContextManager[None]]] = None
     # Background jobs. Skipped when the host runs with enable_schedulers=false,
     # so replicas still initialise but jobs run on exactly one instance.
-    scheduler: Optional[Callable[[], AbstractContextManager]] = None
+    scheduler: Optional[Callable[[], AbstractContextManager[None]]] = None
