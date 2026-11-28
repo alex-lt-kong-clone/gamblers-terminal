@@ -30,6 +30,7 @@ package = false
 exclude-newer = "14 days"
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 # Staying on httpx for Starlette TestClient; silence its benign deprecation warning.
 filterwarnings = [
     "ignore:Using `httpx` with `starlette.testclient` is deprecated:Warning",
