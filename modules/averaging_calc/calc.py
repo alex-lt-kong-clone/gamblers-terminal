@@ -11,6 +11,7 @@ it returns the position readout with `reachable=False` and `plan=None`.
 """
 
 import math
+from typing import Any
 
 
 def _require_finite_positive(**vals: float) -> None:
@@ -46,7 +47,7 @@ def shares_to_target(qty: float, avg_cost: float, mkt_px: float, target_frac: fl
     return qty * (mkt_px - avg_cost * (1.0 + target_frac)) / (mkt_px * target_frac)
 
 
-def _plan(qty: float, avg_cost: float, mkt_px: float, target_frac: float) -> dict:
+def _plan(qty: float, avg_cost: float, mkt_px: float, target_frac: float) -> dict[str, float]:
     add = shares_to_target(qty, avg_cost, mkt_px, target_frac)
     _require_finite_result(add)  # before math.ceil, which raises OverflowError on inf
     new_avg = (qty * avg_cost + add * mkt_px) / (qty + add)
@@ -65,13 +66,13 @@ def _plan(qty: float, avg_cost: float, mkt_px: float, target_frac: float) -> dic
     return plan
 
 
-def evaluate(qty: float, avg_cost: float, mkt_px: float, target_pct: float | None = None) -> dict:
+def evaluate(qty: float, avg_cost: float, mkt_px: float, target_pct: float | None = None) -> dict[str, Any]:
     """Position readout, plus the buy plan when a reachable target is given."""
     _require_finite_positive(qty=qty, avg_cost=avg_cost, mkt_px=mkt_px)
     current_pct = (mkt_px / avg_cost - 1.0) * 100.0
     pnl_amount = qty * (mkt_px - avg_cost)
     _require_finite_result(current_pct, pnl_amount)  # extreme finite inputs can overflow
-    result = {
+    result: dict[str, Any] = {
         "current_pnl_pct": current_pct,
         "pnl_amount": pnl_amount,
         "reachable_low_pct": min(0.0, current_pct),

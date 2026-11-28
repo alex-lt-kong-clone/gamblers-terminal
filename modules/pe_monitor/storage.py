@@ -2,6 +2,7 @@
 
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 
 SCHEMA = """
@@ -59,11 +60,11 @@ def read_history(
     ticker: str,
     start_date: str | None = None,
     end_date: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Read history rows for a ticker, optionally bounded by [start_date,
     end_date] (inclusive). Both bounds are ISO-format date strings."""
     sql = f"SELECT {', '.join(ROW_COLS)} FROM history WHERE ticker = ?"
-    params: list = [ticker.upper()]
+    params: list[str] = [ticker.upper()]
     if start_date:
         sql += " AND date >= ?"
         params.append(start_date)
@@ -90,7 +91,7 @@ def latest_value_date(
     if column not in ROW_COLS:
         raise ValueError(f"unknown column: {column}")
     sql = f"SELECT MAX(date) FROM history WHERE ticker = ? AND {column} IS NOT NULL"
-    params: list = [ticker.upper()]
+    params: list[str] = [ticker.upper()]
     if require_price:
         sql += " AND price > 0"
     if on_or_before:
@@ -115,7 +116,7 @@ def earliest_value_date(
     if column not in ROW_COLS:
         raise ValueError(f"unknown column: {column}")
     sql = f"SELECT MIN(date) FROM history WHERE ticker = ? AND {column} IS NOT NULL"
-    params: list = [ticker.upper()]
+    params: list[str] = [ticker.upper()]
     if require_price:
         sql += " AND price > 0"
     if on_or_after:
@@ -126,7 +127,7 @@ def earliest_value_date(
     return row[0] if row and row[0] else None
 
 
-def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict]:
+def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict[str, Any]]:
     """Return the most-recent row per requested ticker, with empty stubs for
     tickers that have no rows yet. Order matches the input `tickers` list."""
     with sqlite3.connect(db_path) as conn:
@@ -154,7 +155,7 @@ def latest_per_ticker(db_path: str, tickers: list[str]) -> list[dict]:
     return result
 
 
-def append_snapshot(db_path: str, ticker: str, snapshot: dict) -> None:
+def append_snapshot(db_path: str, ticker: str, snapshot: dict[str, Any]) -> None:
     """UPSERT for same-day entries: latest non-NULL write wins.
 
     The snapshot replaces any existing column where the new value is
@@ -179,7 +180,7 @@ def append_snapshot(db_path: str, ticker: str, snapshot: dict) -> None:
 
 
 def merge_history(
-    db_path: str, ticker: str, new_rows: list[dict]
+    db_path: str, ticker: str, new_rows: list[dict[str, Any]]
 ) -> tuple[int, int]:
     """Insert missing dates and fill NULL columns in existing rows.
 

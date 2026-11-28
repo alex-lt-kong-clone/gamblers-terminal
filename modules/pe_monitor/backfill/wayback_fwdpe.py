@@ -56,8 +56,8 @@ def cdx_snapshots(ticker: str, since: str = "20200101") -> list[tuple[str, str]]
         "collapse": "timestamp:8",  # one per unique YYYYMMDD prefix
     }
     full = f"{CDX_URL}?{urllib.parse.urlencode(params)}"
-    req = urllib.request.Request(full, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    req = urllib.request.Request(full, headers={"User-Agent": UA})  # noqa: S310
+    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310
         rows = json.load(r)
     if not rows:
         return []
@@ -68,9 +68,9 @@ def cdx_snapshots(ticker: str, since: str = "20200101") -> list[tuple[str, str]]
 def fetch_wayback(timestamp: str, url: str) -> str:
     """Fetch the raw archived page (no Wayback toolbar) and decode it."""
     full = WAYBACK_URL_PREFIX.format(ts=timestamp, url=url)
-    req = urllib.request.Request(full, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        data = r.read()
+    req = urllib.request.Request(full, headers={"User-Agent": UA})  # noqa: S310
+    with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
+        data: bytes = r.read()
         if r.headers.get("Content-Encoding") == "gzip":
             data = gzip.decompress(data)
     return data.decode("utf-8", errors="replace")
@@ -114,7 +114,7 @@ def parse_new_layout(html: str, snapshot_date: str) -> dict[str, float]:
             return {}
         values = [c.get_text(strip=True) for c in cells]
         out: dict[str, float] = {}
-        for label, val_text in zip(header_dates, values):
+        for label, val_text in zip(header_dates, values, strict=False):
             if not val_text or val_text in ("Forward P/E", "--", "N/A", ""):
                 continue
             try:

@@ -6,6 +6,7 @@ refresh keeps the last known-good result and records the error.
 """
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,7 +15,7 @@ from . import config, twr
 
 _lock = threading.Lock()
 _refresh_lock = threading.Lock()
-_state: dict = {
+_state: dict[str, object] = {
     "computed_at": None,
     "as_of": None,
     "total_value": None,
@@ -29,12 +30,12 @@ class Busy(Exception):
     """A refresh is already in progress."""
 
 
-def get() -> dict:
+def get() -> dict[str, object]:
     with _lock:
         return dict(_state)
 
 
-def refresh() -> dict:
+def refresh() -> dict[str, object]:
     if not _refresh_lock.acquire(blocking=False):
         raise Busy()
     try:
@@ -60,7 +61,7 @@ def _scheduled_refresh() -> None:
 
 
 @contextmanager
-def scheduler_lifespan():
+def scheduler_lifespan() -> Iterator[None]:
     sched = BackgroundScheduler()
     sched.add_job(
         _scheduled_refresh, "interval",

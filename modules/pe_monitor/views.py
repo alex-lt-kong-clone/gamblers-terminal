@@ -4,10 +4,12 @@ Was app.py. Config is loaded lazily and the scheduler is owned by `lifespan`, so
 importing this module has no side effects.
 """
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -23,7 +25,7 @@ templates = Jinja2Templates(directory=str(_HERE / "templates"))
 
 
 @lru_cache(maxsize=1)
-def _cfg() -> dict:
+def _cfg() -> dict[str, Any]:
     return config.load_config()
 
 
@@ -52,14 +54,14 @@ def _pick_bucket(num_rows: int) -> int:
     return BUCKET_DAYS[-1]
 
 
-def _downsample(rows: list[dict], bucket_days: int, open_end: bool = False) -> list[dict]:
+def _downsample(rows: list[dict[str, Any]], bucket_days: int, open_end: bool = False) -> list[dict[str, Any]]:
     """`open_end` exempts the final (live) bucket from loss collapsing, so a loss
     that recovered by today's edge isn't drawn as an ongoing gap."""
     if bucket_days <= 1 or len(rows) <= TARGET_POINTS:
         return rows
     out = []
     current_bucket = None
-    bucket_rows: list[dict] = []
+    bucket_rows: list[dict[str, Any]] = []
     for r in rows:
         b = date.fromisoformat(r["date"]).toordinal() // bucket_days
         if current_bucket is None:
@@ -74,7 +76,7 @@ def _downsample(rows: list[dict], bucket_days: int, open_end: bool = False) -> l
     return out
 
 
-def _collapse_bucket(bucket_rows: list[dict], is_open: bool = False) -> dict:
+def _collapse_bucket(bucket_rows: list[dict[str, Any]], is_open: bool = False) -> dict[str, Any]:
     """Collapse daily rows to one: last value per field, volume summed. Unless
     `is_open`, a loss anywhere in the bucket collapses that series to a gap."""
     result = dict(bucket_rows[-1])
@@ -92,7 +94,7 @@ def _collapse_bucket(bucket_rows: list[dict], is_open: bool = False) -> dict:
     return result
 
 
-def _interpolate_series(rows: list[dict], value_col: str, flag_col: str) -> list[dict]:
+def _interpolate_series(rows: list[dict[str, Any]], value_col: str, flag_col: str) -> list[dict[str, Any]]:
     """Reconstruct a daily forward-P/E line from sparse, signed anchors, breaking
     it wherever the implied forward EPS is non-positive (a forecast loss leaves
     the P/E undefined).
@@ -129,7 +131,7 @@ def _interpolate_series(rows: list[dict], value_col: str, flag_col: str) -> list
         if r.get(value_col) and r.get("price")
     ]
     eps_at = [rows[i]["price"] / rows[i][value_col] for i in anchors]
-    for i, eps in zip(anchors, eps_at):
+    for i, eps in zip(anchors, eps_at, strict=False):
         if eps <= 0:
             rows[i][value_col] = None  # loss anchor: undefined P/E, serve as a gap
             rows[i][loss_col] = True
@@ -159,10 +161,10 @@ def _window_target(now_date: str, days: int | None, ytd: bool) -> str:
     """Snap date for the `then` endpoint: Jan 1 of `now`'s year (YTD) or
     now - `days`."""
     nd = date.fromisoformat(now_date)
-    return (date(nd.year, 1, 1) if ytd else nd - timedelta(days=days)).isoformat()
+    return (date(nd.year, 1, 1) if ytd else nd - timedelta(days=cast(int, days))).isoformat()
 
 
-def _delta_rows(db_path: str, ticker: str, days: int | None, ytd: bool) -> list[dict]:
+def _delta_rows(db_path: str, ticker: str, days: int | None, ytd: bool) -> list[dict[str, Any]]:
     """Rows needed to compute a ticker's delta point, bounded to
     [latest forward_pe+price anchor on/before the window target, now] so we don't
     read and interpolate the full multi-year series on every request. That anchor
@@ -188,11 +190,11 @@ def _sparkline_series(values: list[float], n: int = 48) -> list[float]:
     return [values[round(i * step)] for i in range(n)]
 
 
-def _safe_div(a, b):
+def _safe_div(a: float | None, b: float | None) -> float | None:
     return (a / b) if (a is not None and b) else None
 
 
-def _decompose(then_price, now_price, then_pe, now_pe) -> dict:
+def _decompose(then_price: float | None, now_price: float | None, then_pe: float, now_pe: float) -> dict[str, float | None]:
     """Split the forward-P/E % change into price and EPS movement. Implied
     forward EPS = price / forward_pe, so P/E = price / EPS holds exactly and the
     contributions add up: price_contrib + eps_contrib == delta_pct. `*_change_pct`
@@ -212,7 +214,7 @@ def _decompose(then_price, now_price, then_pe, now_pe) -> dict:
     return out
 
 
-def _delta_point(rows: list[dict], days: int | None, ytd: bool) -> dict:
+def _delta_point(rows: list[dict[str, Any]], days: int | None, ytd: bool) -> dict[str, Any]:
     """Forward-P/E change from `now` (latest value) to `then` (value on/before
     now - window). The live forward_pe series is sparse (live snapshots + a few
     backfilled anchors), so we interpolate it to daily exactly as the chart does
@@ -224,7 +226,7 @@ def _delta_point(rows: list[dict], days: int | None, ytd: bool) -> dict:
     rows = _interpolate_series(rows, "forward_pe", "forward_pe_interpolated")
     pts = [(r["date"], r["forward_pe"], r["forward_pe_interpolated"], r.get("price"))
            for r in rows if r.get("forward_pe") is not None]
-    empty = {"now_date": None, "now": None, "now_interpolated": None,
+    empty: dict[str, object] = {"now_date": None, "now": None, "now_interpolated": None,
              "then_date": None, "then": None, "then_interpolated": None,
              "delta": None, "delta_pct": None, "series": [],
              "then_price": None, "now_price": None, "then_eps": None, "now_eps": None,
@@ -292,13 +294,13 @@ def delta_page(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/api/tickers")
-def api_tickers():
-    return _cfg()["tickers"]
+@router.get("/api/tickers", response_model=None)
+def api_tickers() -> list[str]:
+    return cast(list[str], _cfg()["tickers"])
 
 
-@router.get("/api/delta")
-def api_delta(window: str = Query("1m")):
+@router.get("/api/delta", response_model=None)
+def api_delta(window: str = Query("1m")) -> list[dict[str, object]]:
     """Per-ticker forward-P/E change over `window` (1d|1w|1m|3m|6m|1y|ytd),
     using live forward_pe only. `then` snaps to the most recent value on/before
     now - window; null when the window predates the ticker's coverage."""
@@ -319,7 +321,7 @@ def api_delta(window: str = Query("1m")):
 
 def _history_rows(
     db_path: str, ticker: str, start_date: str | None, end_date: str | None
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Interpolated history for [start_date, end_date]. We read OUT to the real
     anchors (forward_pe and IBES, each priced) just before `start_date` and just
     after `end_date`, so interpolation has anchors on both sides of a window that
@@ -333,14 +335,14 @@ def _history_rows(
                  for col in SERIES]
         lefts = [a for a in lefts if a]
         if lefts:
-            read_start = min(lefts + [start_date])
+            read_start = min(cast(list[str], lefts) + [start_date])
     if end_date:
         rights = [storage.earliest_value_date(db_path, ticker, col,
                                               on_or_after=end_date, require_price=True)
                   for col in SERIES]
         rights = [a for a in rights if a]
         if rights:
-            read_end = max(rights + [end_date])
+            read_end = max(cast(list[str], rights) + [end_date])
     rows = storage.read_history(db_path, ticker, start_date=read_start, end_date=read_end)
     rows = _interpolate_series(rows, "forward_pe", "forward_pe_interpolated")
     rows = _interpolate_series(rows, "forward_pe_ibes", "forward_pe_ibes_interpolated")
@@ -351,13 +353,13 @@ def _history_rows(
     return rows
 
 
-@router.get("/api/history/{ticker}")
+@router.get("/api/history/{ticker}", response_model=None)
 def api_history(
     ticker: str,
     start: str | None = None,
     end: str | None = None,
     range_: str = Query("all", alias="range"),
-):
+) -> list[dict[str, Any]]:
     """History endpoint. Window can be specified as either `start`/`end` (ISO,
     either optional, takes precedence) or a `range` preset
     (1m|3m|6m|1y|3y|5y|all). Rows are adaptively downsampled server-side."""
@@ -382,7 +384,7 @@ def api_history(
     return _downsample(rows, _pick_bucket(len(rows)), open_end)
 
 
-def _hide_nonpositive_pe(row: dict) -> dict:
+def _hide_nonpositive_pe(row: dict[str, Any]) -> dict[str, Any]:
     """A P/E is a meaningful multiple only when positive; a non-positive value (a
     trailing or forecast loss) reads as undefined. The chart enforces this via
     interpolation; the latest-snapshot grid enforces it here."""
@@ -392,31 +394,31 @@ def _hide_nonpositive_pe(row: dict) -> dict:
     return row
 
 
-@router.get("/api/latest")
-def api_latest():
+@router.get("/api/latest", response_model=None)
+def api_latest() -> list[dict[str, Any]]:
     cfg = _cfg()
     rows = storage.latest_per_ticker(cfg["database_path"], cfg["tickers"])
     return [_hide_nonpositive_pe(r) for r in rows]
 
 
-@router.post("/api/refresh")
-def api_refresh():
+@router.post("/api/refresh", response_model=None)
+def api_refresh() -> dict[str, str]:
     cfg = _cfg()
     try:
         scheduler.snapshot_all(cfg["tickers"], cfg["database_path"])
     except scheduler.Busy:
-        raise HTTPException(status_code=409, detail="snapshot already in progress")
+        raise HTTPException(status_code=409, detail="snapshot already in progress") from None
     return {"status": "ok"}
 
 
 @contextmanager
-def lifespan():
+def lifespan() -> Iterator[None]:
     storage.init_db(_cfg()["database_path"])
     yield
 
 
 @contextmanager
-def scheduler_lifespan():
+def scheduler_lifespan() -> Iterator[None]:
     cfg = _cfg()
     sched = scheduler.start_scheduler(
         cfg["tickers"], cfg["database_path"], cfg["fetch_interval_seconds"]

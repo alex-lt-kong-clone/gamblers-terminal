@@ -1,10 +1,13 @@
+from collections.abc import Callable
+
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import modules.ai_ratios.cache as cache
 import modules.pe_monitor.scheduler as sched
 
 
-def test_ai_ratios_refresh_409_when_busy(make_app):
+def test_ai_ratios_refresh_409_when_busy(make_app: Callable[..., FastAPI]) -> None:
     c = TestClient(make_app())  # auth off
     cache._refresh_lock.acquire()
     try:
@@ -13,7 +16,7 @@ def test_ai_ratios_refresh_409_when_busy(make_app):
         cache._refresh_lock.release()
 
 
-def test_pe_monitor_refresh_409_when_busy(make_app):
+def test_pe_monitor_refresh_409_when_busy(make_app: Callable[..., FastAPI]) -> None:
     c = TestClient(make_app())
     sched._snapshot_lock.acquire()
     try:

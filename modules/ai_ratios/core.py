@@ -21,13 +21,14 @@ def sp500_tickers() -> list[str]:
     resp.raise_for_status()
     # pd.read_html() looks for <table></table> and ignores the rest
     table = pd.read_html(io.StringIO(resp.text))[0]
-    return table["Symbol"].str.replace(".", "-", regex=False).tolist()
+    tickers: list[str] = table["Symbol"].str.replace(".", "-", regex=False).tolist()
+    return tickers
 
 
 def sp500_weights() -> tuple[dict[str, float], int, int]:
     """Return (weights%, n_total, n_ok). Weights normalize over the constituents
     that responded, so callers must check coverage = n_ok / n_total before trust."""
-    def fetch(ticker):
+    def fetch(ticker: str) -> tuple[str, float | None]:
         try:
             info = yf.Ticker(ticker).info
             price = info.get("regularMarketPrice") or info.get("currentPrice")
