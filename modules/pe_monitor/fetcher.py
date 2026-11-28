@@ -62,7 +62,7 @@ class YfinanceFetcher:
                 analyst_count = int(row["numberOfAnalysts"])
             if financial_currency and trade_ccy and financial_currency != trade_ccy and pd.notna(row.get("avg")):
                 forward_eps_native = float(row["avg"])
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         # TTM P/E isn't interpolated, so a trailing loss must read as a gap:
@@ -168,7 +168,7 @@ class YfinanceFetcher:
                          float(row["Reported EPS"]) * scalar)
                         for ts, row in ed.iterrows()
                     ]
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         qfin = ticker_obj.quarterly_income_stmt
@@ -230,7 +230,7 @@ class KrxFetcher:
                         snap["trailing_eps"] = ttm_eps
                         if snap.get("price") and ttm_eps > 0:
                             snap["ttm_pe"] = snap["price"] / ttm_eps
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         if snap.get("forward_eps") is None and snap.get("forward_pe") and snap.get("price"):

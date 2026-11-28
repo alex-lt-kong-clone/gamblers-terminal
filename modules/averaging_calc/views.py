@@ -25,4 +25,4 @@ def api_calc(qty: float, avg_cost: float, mkt_px: float, target_pct: float | Non
     try:
         return calc.evaluate(qty, avg_cost, mkt_px, target_pct)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

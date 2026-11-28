@@ -32,4 +32,4 @@ def api_refresh():
     try:
         return cache.refresh()
     except cache.Busy:
-        raise HTTPException(status_code=409, detail="refresh already in progress")
+        raise HTTPException(status_code=409, detail="refresh already in progress") from None

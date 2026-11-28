@@ -129,7 +129,7 @@ def _interpolate_series(rows: list[dict], value_col: str, flag_col: str) -> list
         if r.get(value_col) and r.get("price")
     ]
     eps_at = [rows[i]["price"] / rows[i][value_col] for i in anchors]
-    for i, eps in zip(anchors, eps_at):
+    for i, eps in zip(anchors, eps_at, strict=False):
         if eps <= 0:
             rows[i][value_col] = None  # loss anchor: undefined P/E, serve as a gap
             rows[i][loss_col] = True
@@ -405,7 +405,7 @@ def api_refresh():
     try:
         scheduler.snapshot_all(cfg["tickers"], cfg["database_path"])
     except scheduler.Busy:
-        raise HTTPException(status_code=409, detail="snapshot already in progress")
+        raise HTTPException(status_code=409, detail="snapshot already in progress") from None
     return {"status": "ok"}
 
 
