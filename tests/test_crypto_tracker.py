@@ -1,6 +1,9 @@
+from collections.abc import Callable, Iterator
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from modules.crypto_tracker import cache, twr
@@ -9,17 +12,17 @@ from modules.crypto_tracker import cache, twr
 class _Resp:
     """Minimal stand-in for a requests Response."""
 
-    def __init__(self, payload):
+    def __init__(self, payload: object) -> None:
         self._payload = payload
 
-    def raise_for_status(self):
+    def raise_for_status(self) -> None:
         pass
 
-    def json(self):
+    def json(self) -> object:
         return self._payload
 
 
-def _day_ms(on_date):
+def _day_ms(on_date: str) -> int:
     return int(datetime.strptime(on_date, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 # --- Pure return math (prices injected; no network) ---
@@ -30,34 +33,34 @@ TODAY = "2024-01-01"
 class FakePrices:
     """Deterministic provider keyed by (symbol, 'YYYY-MM-DD')."""
 
-    def __init__(self, table):
+    def __init__(self, table: dict[tuple[str, str], float]) -> None:
         self.table = table
 
-    def price(self, symbol, on_date):
+    def price(self, symbol: str, on_date: str) -> float:
         return self.table[(symbol, on_date)]
 
 
-def _single_deposit():
-    rows = [{"date": "2023-01-01", "asset": "BTC", "delta": 1.0, "note": ""}]
+def _single_deposit() -> tuple[list[twr.Row], list[str], FakePrices]:
+    rows: list[twr.Row] = [{"date": "2023-01-01", "asset": "BTC", "delta": 1.0, "note": ""}]
     prices = FakePrices({("BTCUSDT", "2023-01-01"): 100.0, ("BTCUSDT", TODAY): 200.0})
     return rows, ["BTC"], prices
 
 
-def test_twr_single_deposit_doubles():
+def test_twr_single_deposit_doubles() -> None:
     rows, assets, prices = _single_deposit()
     assert twr.twr_over_range(rows, assets, "2023-01-01", TODAY, prices) == pytest.approx(1.0)
 
 
-def test_mwr_equals_twr_without_interior_flows():
+def test_mwr_equals_twr_without_interior_flows() -> None:
     rows, assets, prices = _single_deposit()
     twr_v = twr.twr_over_range(rows, assets, "2023-01-01", TODAY, prices)
     mwr_v = twr.mwr_over_range(rows, assets, "2023-01-01", TODAY, prices)
     assert mwr_v == pytest.approx(twr_v, abs=1e-6)
 
 
-def test_twr_strips_timing_but_mwr_rewards_the_dip_buy():
+def test_twr_strips_timing_but_mwr_rewards_the_dip_buy() -> None:
     # Price 100 -> 50 -> 100 (flat over time) but a second buy lands at the dip.
-    rows = [
+    rows: list[twr.Row] = [
         {"date": "2023-01-01", "asset": "BTC", "delta": 1.0, "note": ""},
         {"date": "2023-07-01", "asset": "BTC", "delta": 1.0, "note": "dip buy"},
     ]
@@ -72,34 +75,34 @@ def test_twr_strips_timing_but_mwr_rewards_the_dip_buy():
     assert mwr_v is not None and mwr_v > 0  # buying the dip earns a positive IRR
 
 
-def test_short_window_large_gain_resolves_mwr():
+def test_short_window_large_gain_resolves_mwr() -> None:
     # Regression: a 30-day double implies an annual IRR ~4597, which overflowed
     # the old fixed high=1000 bracket -> MWR came back n/a. Now it resolves.
-    rows = [{"date": "2024-01-01", "asset": "BTC", "delta": 1.0, "note": ""}]
+    rows: list[twr.Row] = [{"date": "2024-01-01", "asset": "BTC", "delta": 1.0, "note": ""}]
     prices = FakePrices({("BTCUSDT", "2024-01-01"): 100.0, ("BTCUSDT", "2024-01-31"): 200.0})
     mwr_v = twr.mwr_over_range(rows, ["BTC"], "2024-01-01", "2024-01-31", prices)
     assert mwr_v is not None and mwr_v == pytest.approx(1.0, abs=1e-3)  # 100% cumulative
 
 
-def test_xirr_resolves_extreme_short_window_rate():
+def test_xirr_resolves_extreme_short_window_rate() -> None:
     flows = [(date(2024, 1, 1), -100.0), (date(2024, 1, 31), 200.0)]
     r = twr.xirr(flows)
     assert r is not None and r == pytest.approx(2 ** (365 / 30) - 1, rel=1e-3)
 
 
-def test_xirr_resolves_near_total_loss():
+def test_xirr_resolves_near_total_loss() -> None:
     # >99.99% loss: root sits below the old fixed lower bound, used to return None.
     flows = [(date(2023, 1, 1), -100.0), (date(2024, 1, 1), 0.001)]
     r = twr.xirr(flows)
     assert r is not None and r < -0.999
 
 
-def test_xirr_recovers_known_rate():
+def test_xirr_recovers_known_rate() -> None:
     flows = [(date(2023, 1, 1), -100.0), (date(2024, 1, 1), 110.0)]
     assert twr.xirr(flows) == pytest.approx(0.10, abs=1e-4)
 
 
-def test_xirr_none_without_sign_change():
+def test_xirr_none_without_sign_change() -> None:
     assert twr.xirr([(date(2023, 1, 1), -1.0), (date(2024, 1, 1), -2.0)]) is None
 
 
@@ -109,13 +112,13 @@ def test_xirr_none_without_sign_change():
     (-1.5, 400, -1.0),   # worse than total loss is clamped
     (None, 400, None),
 ])
-def test_annualize_cumul(cumul, days, expected):
+def test_annualize_cumul(cumul: float | None, days: int, expected: float | None) -> None:
     got = twr.annualize_cumul(cumul, days)
     assert got is None if expected is None else got == pytest.approx(expected)
 
 
-def test_balance_at_is_cumulative_per_asset():
-    rows = [
+def test_balance_at_is_cumulative_per_asset() -> None:
+    rows: list[twr.Row] = [
         {"date": "2023-01-01", "asset": "BTC", "delta": 1.0, "note": ""},
         {"date": "2023-07-01", "asset": "BTC", "delta": 0.5, "note": ""},
         {"date": "2023-07-01", "asset": "ETH", "delta": 3.0, "note": ""},
@@ -125,21 +128,21 @@ def test_balance_at_is_cumulative_per_asset():
     assert twr.balance_at(rows, "2023-08-01", "ETH") == pytest.approx(3.0)
 
 
-def test_unknown_asset_rejected():
+def test_unknown_asset_rejected() -> None:
     with pytest.raises(ValueError):
         twr.symbol_for("DOGE")
 
 
 # --- CSV validation (reject malformed non-blank rows with line numbers) ---
 
-def _write_csv(monkeypatch, tmp_path, body):
+def _write_csv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> Path:
     p = tmp_path / "portfolio.csv"
     p.write_text(body)
     monkeypatch.setattr(twr, "PORTFOLIO_CSV", p)
     return p
 
 
-def test_load_portfolio_blank_lines_skipped(monkeypatch, tmp_path):
+def test_load_portfolio_blank_lines_skipped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _write_csv(monkeypatch, tmp_path, "date,asset,delta,note\n2024-01-01,BTC,1.0,seed\n\n")
     assert len(twr.load_portfolio()) == 1
 
@@ -151,28 +154,28 @@ def test_load_portfolio_blank_lines_skipped(monkeypatch, tmp_path):
     ("2024-01-01,BTC,nan,x", "non-finite delta"),
     ("2024-01-01,BTC,inf,x", "non-finite delta"),
 ])
-def test_load_portfolio_rejects_bad_row_with_line_number(monkeypatch, tmp_path, bad, needle):
+def test_load_portfolio_rejects_bad_row_with_line_number(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, bad: str, needle: str) -> None:
     _write_csv(monkeypatch, tmp_path, f"date,asset,delta,note\n2024-01-01,BTC,1.0,ok\n{bad}\n")
     with pytest.raises(ValueError) as e:
         twr.load_portfolio()
     assert needle in str(e.value) and "line 3" in str(e.value)
 
 
-def test_load_portfolio_rejects_future_date(monkeypatch, tmp_path):
+def test_load_portfolio_rejects_future_date(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _write_csv(monkeypatch, tmp_path, "date,asset,delta,note\n2024-01-01,BTC,1.0,ok\n2999-01-01,BTC,1.0,typo\n")
     with pytest.raises(ValueError) as e:
         twr.load_portfolio()
     assert "future date" in str(e.value) and "line 3" in str(e.value)
 
 
-def test_load_portfolio_rejects_oversell(monkeypatch, tmp_path):
+def test_load_portfolio_rejects_oversell(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _write_csv(monkeypatch, tmp_path, "date,asset,delta,note\n2024-01-01,BTC,1.0,buy\n2024-02-01,BTC,-3.0,oversell\n")
     with pytest.raises(ValueError) as e:
         twr.load_portfolio()
     assert "oversold" in str(e.value) and "line 3" in str(e.value)
 
 
-def test_load_portfolio_allows_intraday_net_nonnegative(monkeypatch, tmp_path):
+def test_load_portfolio_allows_intraday_net_nonnegative(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A sell logged before its same-day buy nets >= 0 by end of day -> not an oversell.
     _write_csv(monkeypatch, tmp_path, "date,asset,delta,note\n2024-01-01,BTC,-1.0,sell\n2024-01-01,BTC,2.0,buy\n")
     assert len(twr.load_portfolio()) == 2
@@ -180,7 +183,7 @@ def test_load_portfolio_allows_intraday_net_nonnegative(monkeypatch, tmp_path):
 
 # --- Price cache I/O (atomic write, corrupt read recovers) ---
 
-def test_cache_roundtrip_and_corrupt_recovers(monkeypatch, tmp_path):
+def test_cache_roundtrip_and_corrupt_recovers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cache_file = tmp_path / ".price_cache.json"
     monkeypatch.setattr(twr, "CACHE_FILE", cache_file)
     monkeypatch.setattr(twr, "ROOT", tmp_path)  # temp file lands beside it for os.replace
@@ -192,7 +195,7 @@ def test_cache_roundtrip_and_corrupt_recovers(monkeypatch, tmp_path):
 
 # --- compute() end to end (injected provider + clock, no network/disk) ---
 
-def test_compute_end_to_end_is_deterministic(monkeypatch, tmp_path):
+def test_compute_end_to_end_is_deterministic(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _write_csv(monkeypatch, tmp_path, "date,asset,delta,note\n2024-01-01,BTC,1.0,seed\n")
     prices = FakePrices({("BTCUSDT", "2024-01-01"): 100.0, ("BTCUSDT", "2024-01-31"): 200.0})
     data = twr.compute(prices=prices, today=date(2024, 1, 31))
@@ -205,7 +208,7 @@ def test_compute_end_to_end_is_deterministic(monkeypatch, tmp_path):
     assert alltime["cagr"] is None  # under a year -> not annualized
 
 
-def test_compute_drops_fully_exited_dust_position(monkeypatch, tmp_path):
+def test_compute_drops_fully_exited_dust_position(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # 0.1 + 0.1 + 0.1 - 0.3 leaves float dust (~5.5e-17), not an exact 0.
     _write_csv(monkeypatch, tmp_path,
                "date,asset,delta,note\n2024-01-01,BTC,0.1,\n2024-01-02,BTC,0.1,\n"
@@ -217,35 +220,35 @@ def test_compute_drops_fully_exited_dust_position(monkeypatch, tmp_path):
 
 # --- Binance pricing paths (requests mocked) ---
 
-def test_historical_price_rejects_candle_from_a_later_day(monkeypatch):
+def test_historical_price_rejects_candle_from_a_later_day(monkeypatch: pytest.MonkeyPatch) -> None:
     on = "2017-01-01"  # before BTCUSDT listed -> /klines returns the listing-day candle
     later = _day_ms(on) + 5 * 86_400_000
-    monkeypatch.setattr(twr.requests, "get", lambda *a, **k: _Resp([[later, "1", "1", "1", "9.0", "1"]]))
+    monkeypatch.setattr("modules.crypto_tracker.twr.requests.get", lambda *a, **k: _Resp([[later, "1", "1", "1", "9.0", "1"]]))
     with pytest.raises(RuntimeError):
         twr.historical_price("BTCUSDT", on, {})
 
 
-def test_historical_price_accepts_same_day_candle(monkeypatch):
+def test_historical_price_accepts_same_day_candle(monkeypatch: pytest.MonkeyPatch) -> None:
     on = "2024-01-01"
-    monkeypatch.setattr(twr.requests, "get", lambda *a, **k: _Resp([[_day_ms(on), "1", "1", "1", "42.0", "1"]]))
+    monkeypatch.setattr("modules.crypto_tracker.twr.requests.get", lambda *a, **k: _Resp([[_day_ms(on), "1", "1", "1", "42.0", "1"]]))
     assert twr.historical_price("BTCUSDT", on, {}) == 42.0
 
 
-def test_current_prices_batches_into_one_request(monkeypatch):
+def test_current_prices_batches_into_one_request(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = []
 
-    def fake_get(url, params=None, timeout=None):
+    def fake_get(url: str, params: dict[str, str], timeout: int) -> _Resp:
         calls.append(params)
         return _Resp([{"symbol": "BTCUSDT", "price": "100.0"}, {"symbol": "ETHUSDT", "price": "50.0"}])
 
-    monkeypatch.setattr(twr.requests, "get", fake_get)
+    monkeypatch.setattr("modules.crypto_tracker.twr.requests.get", fake_get)
     out = twr.current_prices(["BTCUSDT", "ETHUSDT"])
     assert out == {"BTCUSDT": 100.0, "ETHUSDT": 50.0}
     assert len(calls) == 1 and "symbols" in calls[0]
 
 
-def test_cli_main_handles_binance_errors(monkeypatch):
-    def boom():
+def test_cli_main_handles_binance_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom() -> None:
         raise RuntimeError("binance down")
     monkeypatch.setattr(twr, "compute", boom)
     with pytest.raises(SystemExit):
@@ -255,18 +258,18 @@ def test_cli_main_handles_binance_errors(monkeypatch):
 # --- API surface (cache empty: no lifespan -> no scheduler -> no network) ---
 
 @pytest.fixture
-def restore_state():
+def restore_state() -> Iterator[None]:
     snap = dict(cache._state)
     yield
     cache._state.clear()
     cache._state.update(snap)
 
 
-def test_page_loads(make_app):
+def test_page_loads(make_app: Callable[..., FastAPI]) -> None:
     assert TestClient(make_app()).get("/crypto-tracker/").status_code == 200
 
 
-def test_api_data_shape_when_empty(make_app):
+def test_api_data_shape_when_empty(make_app: Callable[..., FastAPI]) -> None:
     r = TestClient(make_app()).get("/crypto-tracker/api/data")
     assert r.status_code == 200
     body = r.json()
@@ -274,7 +277,7 @@ def test_api_data_shape_when_empty(make_app):
     assert {"total_value", "ranges", "stale"} <= body.keys()
 
 
-def test_dashboard_renders_populated_state(make_app, restore_state):
+def test_dashboard_renders_populated_state(make_app: Callable[..., FastAPI], restore_state: None) -> None:
     cache._state.update(
         computed_at="2024-01-01T00:00:00Z", as_of="2024-01-01", total_value=300.0,
         holdings=[{"asset": "BTC", "qty": 1.0, "price": 200.0, "value": 200.0}],
@@ -289,7 +292,7 @@ def test_dashboard_renders_populated_state(make_app, restore_state):
     assert "+50.00%" in html and "All-time" in html and "n/a" in html
 
 
-def test_refresh_409_when_busy(make_app):
+def test_refresh_409_when_busy(make_app: Callable[..., FastAPI]) -> None:
     c = TestClient(make_app())
     cache._refresh_lock.acquire()
     try:
@@ -298,22 +301,22 @@ def test_refresh_409_when_busy(make_app):
         cache._refresh_lock.release()
 
 
-def test_refresh_publishes_compute_result(make_app, monkeypatch, restore_state):
+def test_refresh_publishes_compute_result(make_app: Callable[..., FastAPI], monkeypatch: pytest.MonkeyPatch, restore_state: None) -> None:
     fake = {
         "computed_at": "2024-01-01T00:00:00Z", "as_of": "2024-01-01", "total_value": 300.0,
         "holdings": [{"asset": "BTC", "qty": 1.0, "price": 200.0, "value": 200.0}],
         "ranges": [{"name": "All-time", "twr": 0.5, "mwr": 0.6, "cagr": 0.5}],
     }
-    monkeypatch.setattr(cache.twr, "compute", lambda: fake)
+    monkeypatch.setattr(twr, "compute", lambda: fake)
     r = TestClient(make_app()).post("/crypto-tracker/api/refresh")
     assert r.status_code == 200
     body = r.json()
     assert body["total_value"] == 300.0 and body["stale"] is False and body["last_error"] is None
 
 
-def test_refresh_keeps_last_good_on_failure(make_app, monkeypatch, restore_state):
-    def boom():
+def test_refresh_keeps_last_good_on_failure(make_app: Callable[..., FastAPI], monkeypatch: pytest.MonkeyPatch, restore_state: None) -> None:
+    def boom() -> None:
         raise RuntimeError("binance down")
-    monkeypatch.setattr(cache.twr, "compute", boom)
+    monkeypatch.setattr(twr, "compute", boom)
     body = TestClient(make_app()).post("/crypto-tracker/api/refresh").json()
     assert body["stale"] is True and "binance down" in body["last_error"]

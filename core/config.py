@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 _ENV_VAR = "GAMBLERS_TOOLBOX_CONFIG"
-_DEFAULT_SECRET = "dev-insecure-change-me"
+_DEFAULT_SECRET = "dev-insecure-change-me"  # noqa: S105
 _MIN_SECRET_LEN = 16
 
 

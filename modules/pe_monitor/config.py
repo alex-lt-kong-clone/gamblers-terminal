@@ -1,10 +1,11 @@
 """Load and resolve module config. Shared between the app and backfill/ tools."""
 
 import tomllib
+from typing import Any
 from pathlib import Path
 
 
-def load_config(path: str = "config.toml") -> dict:
+def load_config(path: str = "config.toml") -> dict[str, Any]:
     base = Path(__file__).parent
     fp = base / path
     if not fp.exists():

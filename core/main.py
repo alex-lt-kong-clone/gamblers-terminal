@@ -8,6 +8,7 @@ uvicorn calls via `--factory`.
 """
 
 import os
+from collections.abc import AsyncIterator
 from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
 
@@ -19,13 +20,14 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from core import config as host_config
 from core.auth import make_auth_gate
+from core.module import Module
 from core.registry import discover_modules
 
 _HERE = Path(__file__).resolve().parent
 SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
 
 
-def _log_config(config: host_config.HostConfig, modules: list) -> None:
+def _log_config(config: host_config.HostConfig, modules: list[Module]) -> None:
     show = os.environ.get("GAMBLERS_TOOLBOX_LOG_SECRETS", "").lower() in ("1", "true", "yes")
     tokens = config.auth_tokens
     secret_disp = config.secret_key if show else ("set" if config.secret_key else "unset")
@@ -43,7 +45,7 @@ def _log_config(config: host_config.HostConfig, modules: list) -> None:
         print("[gamblers-toolbox] (set GAMBLERS_TOOLBOX_LOG_SECRETS=1 to print token/secret values)")
 
 
-def _validate_modules(modules: list) -> None:
+def _validate_modules(modules: list[Module]) -> None:
     slugs = [m.slug for m in modules]
     dupes = sorted({s for s in slugs if slugs.count(s) > 1})
     if dupes:
@@ -54,12 +56,12 @@ def _validate_modules(modules: list) -> None:
         raise RuntimeError(f"duplicate static mount names: {dupe_names}")
 
 
-def build_app(config: host_config.HostConfig, modules: list) -> FastAPI:
+def build_app(config: host_config.HostConfig, modules: list[Module]) -> FastAPI:
     host_config.check_secret(config)
     _validate_modules(modules)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # `lifespan` (resource setup, e.g. DB init) runs on every instance.
         # `scheduler` (background jobs) is skipped when enable_schedulers is off,
         # so web replicas still initialise but jobs run on exactly one instance.
@@ -98,7 +100,7 @@ def build_app(config: host_config.HostConfig, modules: list) -> FastAPI:
         return templates.TemplateResponse(request, "landing.html", {"modules": modules})
 
     @app.get("/favicon.ico", include_in_schema=False)
-    def favicon():
+    def favicon() -> FileResponse:
         return FileResponse(_HERE / "static" / "favicon.ico")
 
     return app

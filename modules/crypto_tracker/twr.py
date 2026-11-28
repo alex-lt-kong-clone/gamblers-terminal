@@ -21,8 +21,10 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, Protocol, TypedDict, cast
 
 import requests
 
@@ -38,19 +40,24 @@ BINANCE_BASE = "https://api.binance.com/api/v3"
 # Plain YYYY-MM-DD or any ISO-8601 starting with one; the time part is dropped
 # (pricing is at daily UTC-close resolution).
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}([T ].*)?$")
+Row = TypedDict("Row", {"date": str, "asset": str, "delta": float, "note": str})
 
 
-def symbol_for(asset):
+class Prices(Protocol):
+    def price(self, symbol: str, on_date: str) -> float: ...
+
+
+def symbol_for(asset: str) -> str:
     if asset not in config.ASSET_SYMBOLS:
         raise ValueError(f"Unknown asset {asset!r}. Add it to config.ASSET_SYMBOLS.")
     return config.ASSET_SYMBOLS[asset]
 
 
-def _utc_today():
+def _utc_today() -> date:
     return datetime.now(timezone.utc).date()
 
 
-def _parse_date(value):
+def _parse_date(value: str) -> date | None:
     """A real calendar date from YYYY-MM-DD (optionally + time), else None.
 
     DATE_RE only checks shape, so e.g. 2023-13-45 passes it; strptime rejects it.
@@ -63,15 +70,17 @@ def _parse_date(value):
         return None
 
 
-def _oversell_errors(parsed):
+def _oversell_errors(parsed: list[tuple[int, str, str, float, str]]) -> list[str]:
     """Spot, long-only: per-asset cumulative end-of-date balance must stay >= 0.
     `parsed` is a list of (line, date, asset, delta, note). Returns one error per
     asset that goes negative (a sell exceeding holdings, or logged before its buy)."""
-    day_delta, day_line = {}, {}
+    day_delta: dict[tuple[str, str], float] = {}
+    day_line: dict[tuple[str, str], int] = {}
     for line, d, asset, delta, _ in parsed:
         day_delta[(asset, d)] = day_delta.get((asset, d), 0.0) + delta
         day_line[(asset, d)] = max(day_line.get((asset, d), 0), line)
-    errors, bal, flagged = [], {}, set()
+    bal: dict[str, float] = {}
+    errors, flagged = [], set()
     for asset, d in sorted(day_delta):
         bal[asset] = bal.get(asset, 0.0) + day_delta[(asset, d)]
         if bal[asset] < -1e-9 and asset not in flagged:
@@ -81,7 +90,7 @@ def _oversell_errors(parsed):
     return errors
 
 
-def load_portfolio():
+def load_portfolio() -> list[Row]:
     """Parse portfolio.csv. Reject any non-blank malformed row (with its line
     number) rather than skip it silently — a dropped flow misreports holdings,
     and a NaN/Inf delta would propagate until JSON serialization fails."""
@@ -125,7 +134,7 @@ def load_portfolio():
     return [{"date": d, "asset": a, "delta": x, "note": n} for _, d, a, x, n in parsed]
 
 
-def load_cache():
+def load_cache() -> dict[str, float]:
     if not CACHE_FILE.exists():
         return {}
     try:
@@ -136,7 +145,7 @@ def load_cache():
     return data if isinstance(data, dict) else {}
 
 
-def save_cache(cache):
+def save_cache(cache: dict[str, float]) -> None:
     """Write atomically (temp + os.replace) so a crash mid-write can't leave a
     truncated file that bricks every future refresh."""
     fd, tmp = tempfile.mkstemp(dir=str(ROOT), prefix=".price_cache.", suffix=".tmp")
@@ -155,7 +164,7 @@ def save_cache(cache):
 _DAY_MS = 86_400_000
 
 
-def historical_price(symbol, on_date, cache):
+def historical_price(symbol: str, on_date: str, cache: dict[str, float]) -> float:
     """USD-proxy close for `symbol` on YYYY-MM-DD (UTC day). Cached: immutable."""
     key = f"{symbol}:{on_date}"
     if key in cache:
@@ -177,7 +186,7 @@ def historical_price(symbol, on_date, cache):
     return cache[key]
 
 
-def current_prices(symbols):
+def current_prices(symbols: Iterable[str]) -> dict[str, float]:
     """Live prices for several symbols in one request -> {symbol: price}."""
     resp = requests.get(
         f"{BINANCE_BASE}/ticker/price",
@@ -188,7 +197,7 @@ def current_prices(symbols):
     return {row["symbol"]: float(row["price"]) for row in resp.json()}
 
 
-def balance_at(rows, on_date, asset):
+def balance_at(rows: list[Row], on_date: str, asset: str) -> float:
     return sum(r["delta"] for r in rows if r["date"] <= on_date and r["asset"] == asset)
 
 
@@ -197,18 +206,18 @@ class BinancePrices:
     daily close (lazily fetched and memoized in `history`). Injectable so
     compute() can be driven deterministically in tests."""
 
-    def __init__(self, today_str, today_prices, history):
+    def __init__(self, today_str: str, today_prices: dict[str, float], history: dict[str, float]) -> None:
         self._today_str = today_str
         self._today_prices = today_prices
         self._history = history
 
-    def price(self, symbol, on_date):
+    def price(self, symbol: str, on_date: str) -> float:
         if on_date == self._today_str:
             return self._today_prices[symbol]
         return historical_price(symbol, on_date, self._history)
 
 
-def portfolio_value_at(rows, on_date, assets, prices):
+def portfolio_value_at(rows: list[Row], on_date: str, assets: list[str], prices: Prices) -> float:
     total = 0.0
     for asset in assets:
         bal = balance_at(rows, on_date, asset)
@@ -218,7 +227,7 @@ def portfolio_value_at(rows, on_date, assets, prices):
     return total
 
 
-def flow_at(rows, on_date, prices):
+def flow_at(rows: list[Row], on_date: str, prices: Prices) -> float:
     """Sum of (delta * price) for every row on exactly `on_date`."""
     total = 0.0
     for r in rows:
@@ -228,15 +237,15 @@ def flow_at(rows, on_date, prices):
     return total
 
 
-def xnpv(rate, cashflows):
+def xnpv(rate: float, cashflows: list[tuple[date, float]]) -> float:
     """NPV with irregular dates. cashflows = [(date_obj, amount), ...]."""
     if rate <= -1:
         return float("inf")
     t0 = cashflows[0][0]
-    return sum(amt / (1 + rate) ** ((d - t0).days / 365.0) for d, amt in cashflows)
+    return cast(float, sum(amt / (1 + rate) ** ((d - t0).days / 365.0) for d, amt in cashflows))
 
 
-def xirr(cashflows):
+def xirr(cashflows: list[tuple[date, float]]) -> float | None:
     """Annualized IRR via bisection in log-rate space (x = ln(1 + r)).
 
     A fixed rate bracket caps the return it can represent at either end (e.g.
@@ -250,7 +259,7 @@ def xirr(cashflows):
     if not any(amt > 0 for _, amt in cashflows) or not any(amt < 0 for _, amt in cashflows):
         return None
 
-    def f(x):
+    def f(x: float) -> float:
         return xnpv(math.expm1(x), cashflows)  # expm1(x) = e**x - 1 = r
 
     t_max = max((cashflows[-1][0] - cashflows[0][0]).days, 1) / 365.0
@@ -283,7 +292,7 @@ def xirr(cashflows):
     return math.expm1(mid)
 
 
-def annualize_cumul(cumul, days):
+def annualize_cumul(cumul: float | None, days: int) -> float | None:
     """Cumulative-period return -> annualized rate (CAGR).
 
     None for windows under ~1 year — annualizing a short window is a misleading
@@ -293,10 +302,10 @@ def annualize_cumul(cumul, days):
         return None
     if cumul <= -1:
         return -1.0
-    return (1 + cumul) ** (365.0 / days) - 1
+    return cast(float, (1 + cumul) ** (365.0 / days) - 1)
 
 
-def mwr_over_range(rows, assets, start_date, end_date, prices):
+def mwr_over_range(rows: list[Row], assets: list[str], start_date: str, end_date: str, prices: Prices) -> float | None:
     """Cumulative money-weighted return over [start_date, end_date].
 
     V(start) is an initial deposit, each in-period flow a cash flow, V(end) a
@@ -325,10 +334,10 @@ def mwr_over_range(rows, assets, start_date, end_date, prices):
     period_years = (flows[-1][0] - flows[0][0]).days / 365.0
     if period_years <= 0:
         return None
-    return (1 + annual) ** period_years - 1
+    return cast(float, (1 + annual) ** period_years - 1)
 
 
-def twr_over_range(rows, assets, start_date, end_date, prices):
+def twr_over_range(rows: list[Row], assets: list[str], start_date: str, end_date: str, prices: Prices) -> float | None:
     """Sub-period returns geometrically linked from start_date to end_date.
 
     Boundaries: start_date, every interior row date, and end_date. The flow at a
@@ -359,7 +368,7 @@ def twr_over_range(rows, assets, start_date, end_date, prices):
     return product - 1
 
 
-def _range_starts(today, first_date):
+def _range_starts(today: date, first_date: str) -> list[tuple[str, str]]:
     return [
         ("All-time", first_date),
         ("5Y", (today - timedelta(days=365 * 5)).isoformat()),
@@ -371,7 +380,7 @@ def _range_starts(today, first_date):
     ]
 
 
-def compute(prices=None, today=None):
+def compute(prices: Prices | None = None, today: date | None = None) -> dict[str, Any]:
     """Return holdings + per-range TWR/MWR/CAGR.
 
     `prices` (a provider with `.price(symbol, date)`) and `today` are injectable
@@ -390,7 +399,7 @@ def compute(prices=None, today=None):
     today_str = today.isoformat()
 
     persist = prices is None
-    if persist:
+    if prices is None:
         cache = load_cache()
         today_prices = current_prices(symbol_for(a) for a in assets)
         prices = BinancePrices(today_str, today_prices, cache)
@@ -427,11 +436,11 @@ def compute(prices=None, today=None):
     }
 
 
-def _fmt_pct(x):
+def _fmt_pct(x: float | None) -> str:
     return f"{x * 100:>9.2f}%" if x is not None else f"{'n/a':>10}"
 
 
-def main():
+def main() -> None:
     """Standalone CLI: print the portfolio and return table."""
     try:
         data = compute()
