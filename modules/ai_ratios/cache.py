@@ -6,8 +6,10 @@ a low-coverage pull never overwrites a good result.
 """
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import cast
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -17,7 +19,7 @@ COVERAGE_MIN = 0.95
 
 _lock = threading.Lock()
 _refresh_lock = threading.Lock()
-_state: dict = {
+_state: dict[str, object] = {
     "computed_at": None,
     "raw": None,
     "adjusted": None,
@@ -33,12 +35,12 @@ class Busy(Exception):
     """A refresh is already in progress."""
 
 
-def get() -> dict:
+def get() -> dict[str, object]:
     with _lock:
         return dict(_state)
 
 
-def refresh() -> dict:
+def refresh() -> dict[str, object]:
     if not _refresh_lock.acquire(blocking=False):
         raise Busy()
     try:
@@ -55,7 +57,7 @@ def refresh() -> dict:
                 }
                 for t, fineness in config.AI_TICKERS.items()
             ),
-            key=lambda r: r["contribution"],
+            key=lambda r: cast(float, r["contribution"]),
             reverse=True,
         )
         with _lock:
@@ -93,7 +95,7 @@ def _scheduled_refresh() -> None:
 
 
 @contextmanager
-def scheduler_lifespan():
+def scheduler_lifespan() -> Iterator[None]:
     sched = BackgroundScheduler()
     sched.add_job(
         _scheduled_refresh, "interval",

@@ -22,13 +22,13 @@ def dashboard(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/api/data")
-def api_data():
+@router.get("/api/data", response_model=None)
+def api_data() -> dict[str, object]:
     return cache.get()
 
 
-@router.post("/api/refresh")
-def api_refresh():
+@router.post("/api/refresh", response_model=None)
+def api_refresh() -> dict[str, object]:
     try:
         return cache.refresh()
     except cache.Busy:
