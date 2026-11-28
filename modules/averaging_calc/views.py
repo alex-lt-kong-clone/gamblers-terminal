@@ -20,8 +20,8 @@ def page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "calculator.html", {})
 
 
-@router.get("/api/calc")
-def api_calc(qty: float, avg_cost: float, mkt_px: float, target_pct: float | None = None):
+@router.get("/api/calc", response_model=None)
+def api_calc(qty: float, avg_cost: float, mkt_px: float, target_pct: float | None = None) -> dict[str, object]:
     try:
         return calc.evaluate(qty, avg_cost, mkt_px, target_pct)
     except ValueError as exc:
